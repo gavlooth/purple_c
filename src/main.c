@@ -1,0 +1,138 @@
+/*
+ * ============================================================================
+ * Purple C Compiler - ASAP + ISMM 2024 Memory Management
+ *
+ * Primary Strategy:
+ *   - ASAP (As Static As Possible): Compile-time free insertion for acyclic data
+ *   - ISMM 2024 (Deeply Immutable Cycles): SCC-based RC for frozen cyclic data
+ *   - Deferred RC Fallback: Bounded O(k) processing for mutable cycles
+ *
+ * Zero-pause guarantee: No stop-the-world GC, O(k) bounded work
+ * ============================================================================
+ */
+
+#include <stdio.h>
+#include <ctype.h>
+#include <string.h>
+
+#include "types.h"
+#include "eval/eval.h"
+#include "parser/parser.h"
+#include "codegen/codegen.h"
+#include "memory/scc.h"
+#include "memory/deferred.h"
+#include "memory/arena.h"
+#include "analysis/shape.h"
+#include "analysis/escape.h"
+#include "analysis/dps.h"
+
+// -- Main Entry Point --
+
+int main(int argc, char** argv) {
+    // Initialize symbol table
+    init_syms();
+
+    // Initialize type registry (Phase 8)
+    init_type_registry();
+
+    // Initial environment with primitives
+    Value* env = NIL;
+    env = env_extend(env, mk_sym("+"), mk_prim(prim_add));
+    env = env_extend(env, mk_sym("-"), mk_prim(prim_sub));
+    env = env_extend(env, mk_sym("cons"), mk_prim(prim_cons));
+    env = env_extend(env, mk_sym("run"), mk_prim(prim_run));
+
+    // Initial Meta-Environment (Level 0)
+    Value* menv = mk_menv(NIL, env);
+
+    // Generate C runtime header
+    gen_runtime_header();
+
+    // Generate weak reference support (Phase 3)
+    gen_weak_ref_runtime();
+
+    // Generate Perceus reuse runtime (Phase 4)
+    gen_perceus_runtime();
+
+    // Generate SCC runtime (Phase 6b - ISMM 2024)
+    gen_scc_runtime();
+
+    // Generate deferred RC runtime (Phase 7)
+    gen_deferred_runtime();
+
+    // Generate arena allocator (Phase 8)
+    gen_arena_runtime();
+
+    // Generate DPS runtime (Phase 9)
+    gen_dps_runtime();
+
+    // Generate ASAP scanner for List type
+    gen_asap_scanner("List", 1);
+
+    printf("\n// Runtime arithmetic functions\n");
+    printf("Obj* add(Obj* a, Obj* b) { return mk_int(a->i + b->i); }\n");
+    printf("Obj* sub(Obj* a, Obj* b) { return mk_int(a->i - b->i); }\n\n");
+
+    printf("int main() {\n");
+
+    // Process input expressions
+    char input_buf[4096] = {0};
+    const char* input = NULL;
+
+    if (argc > 1) {
+        // Read from command line argument
+        input = argv[1];
+    } else {
+        // Read from stdin
+        if (fgets(input_buf, sizeof(input_buf), stdin)) {
+            // Remove trailing newline
+            size_t len = strlen(input_buf);
+            if (len > 0 && input_buf[len-1] == '\n') {
+                input_buf[len-1] = '\0';
+            }
+            input = input_buf;
+        }
+    }
+
+    if (input && strlen(input) > 0) {
+        set_parse_input(input);
+        Value* expr = parse();
+        if (expr) {
+            Value* result = eval(expr, menv);
+            char* str = val_to_str(result);
+            if (result->tag == T_CODE) {
+                // Compiled code - output as expression
+                printf("  // Expression: %s\n", input);
+                printf("  Obj* result = %s;\n", str);
+                printf("  printf(\"Result: %%ld\\n\", result->i);\n");
+            } else if (result->tag == T_INT) {
+                // Interpreted result - output as comment
+                printf("  // Result: %ld\n", result->i);
+            } else {
+                // Other result types
+                printf("  // Result: %s\n", str);
+            }
+            free(str);
+        }
+    } else {
+        // Default test expression
+        const char* test = "(let ((x (lift 10))) (+ x (lift 5)))";
+        printf("  // Default test: %s\n", test);
+        set_parse_input(test);
+        Value* expr = parse();
+        if (expr) {
+            Value* result = eval(expr, menv);
+            char* str = val_to_str(result);
+            printf("  Obj* result = %s;\n", str);
+            printf("  printf(\"Result: %%ld\\n\", result->i);\n");
+            free(str);
+        }
+    }
+
+    printf("  flush_freelist();\n");
+    printf("  flush_all_deferred();\n");
+    printf("  return 0;\n");
+    printf("}\n");
+
+    return 0;
+}

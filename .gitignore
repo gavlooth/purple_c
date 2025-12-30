@@ -1,0 +1,14 @@
+# Build artifacts
+*.o
+purple_c
+purple_legacy
+output
+output.c
+
+# Editor files
+*.swp
+*~
+.vscode/
+
+# OS files
+.DS_Store

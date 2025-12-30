@@ -1,0 +1,27 @@
+;; Purple Demo: Reflection + Compilation + ASAP
+
+;; 1. Standard Interpretation
+(let ((val 10))
+  (+ val val))
+
+;; 2. Reflection: Modify the evaluator!
+;; We will intercept 'add' to print a message.
+;; (Note: In this scratch impl, we mock the handler change for demonstration)
+(EM (set-meta! 'add (lambda (args env) 
+  (run (lift 999))))) ;; Replace add with constant 999
+
+(+ 1 2) ;; Should now return 999
+
+;; 3. Compilation with ASAP
+;; We lift the inputs to trigger code generation.
+;; The compiler should generate C code with:
+;; - Heap allocations (mk_int)
+;; - Specialized scanners (scan_List)
+;; - Automatic free_obj() calls for 'x'
+
+(let ((x (lift 10))) 
+  (cons x x))
+
+;; 4. Recursive structures
+;; This triggers generation of 'void scan_List(Obj* x)' in the C output.
+(scan 'List (lift 42))
