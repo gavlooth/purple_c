@@ -155,7 +155,7 @@
 - [x] Implement arena allocator runtime
 - [x] Arena-aware constructors (arena_mk_int, arena_mk_pair)
 - [x] O(1) bulk deallocation via arena_destroy
-- [x] Scope detection for arena-eligible allocations
+- [x] Scope detection for arena_eligible allocations
 
 ### Phase 9: Destination-Passing Style (Optimization) ✅
 - [x] Identify DPS candidates (functions returning fresh allocations)
@@ -328,11 +328,46 @@ Mutable cycles that never freeze are handled by deferred RC fallback:
 
 ---
 
-## Next Steps
+## Revisions (Security & Stability)
 
-All 11 phases complete! Remaining work:
+The following improvements are planned to address critical stability and security issues identified in the codebase:
 
-1. **Benchmark**: Compare performance vs tracing GC
-2. **Real-world testing**: Test with larger Purple programs
-3. **Integration testing**: Test exception + concurrency together
-4. **Documentation**: Add API documentation for runtime functions
+1.  **[Security] Replace Fixed-Size Buffers with Dynamic Strings** ✅
+    -   Switch to dynamic string libraries (e.g., sds or bstring) for all string manipulation in `types.c`, `codegen.c`, and `eval.c` to prevent buffer overflow vulnerabilities.
+
+2.  **[Memory] Arena/Region Allocation for Interpreter**
+    -   Implement an Arena or Region-based allocator for the interpreter/compiler phases to eliminate memory leaks. This ensures memory safety without violating the "No Garbage Collection" directive.
+
+3.  **[Stability] Explicit Stack for Recursion** ✅
+    -   Rewrite recursive algorithms (specifically `parse_list` in parser and `tarjan_dfs` in SCC detection) to use explicit stacks, preventing stack overflow crashes on deep input.
+
+4.  **[Performance] O(1) Lookup Optimization**
+    -   Optimize `get_tarjan_node` and `defer_dec` by replacing linear scans with Hash Maps or intrusive fields to achieve O(1) access time.
+
+## Revisions (Memory Model Correctness)
+
+The following flaws in the memory model architecture must be addressed:
+
+1.  **[Concurrency] Use-After-Free Prevention**
+    -   The compiler currently generates `dec_ref` for variables moved to other threads via `send`.
+    -   **Fix**: Implement linear type semantics or "moved-from" tracking in `eval.c` to suppress `dec_ref` when ownership is transferred.
+
+2.  **[Arena] External Reference Leaks**
+    -   Arenas currently `free` blocks without traversing objects, leaking any Heap objects referenced by Arena objects.
+    -   **Fix**: Maintain a side-list of external references in the Arena and decrement them during `arena_destroy`.
+
+3.  **[Shape Analysis] Inter-procedural Safety**
+    -   `free_tree` (recursive free) is used based on local `set!` detection, which can be fooled by mutations in called functions or closures.
+    -   **Fix**: Default to `SHAPE_DAG` (RC) unless strict immutability is proven. Degrade to RC for any data passed to unknown functions.
+
+4.  **[WeakRef] Dangling Reference Invalidation**
+    -   Weak references remain "alive" even after the target object is freed or becomes a zombie.
+    -   **Fix**: Ensure `release_func` invalidates all associated `WeakRef` objects when an object's main reference count hits zero.
+
+5.  **[Reuse] Memory Leak in try_reuse**
+    -   `try_reuse` overwrites object fields without releasing the previous values, leaking any nested objects.
+    -   **Fix**: Automatically decrement reference counts of all scannable fields before reusing an object's memory.
+
+6.  **[Escape] Unsound Escape Propagation**
+    -   The escape analysis does not propagate the escape status of a container to its elements (flow-insensitivity), leading to invalid stack allocations.
+    -   **Fix**: Implement a more robust propagation logic that marks all constituents of an escaping container as escaping.
