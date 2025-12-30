@@ -4,6 +4,15 @@ purple_c
 purple_legacy
 output
 output.c
+*.gcda
+*.gcno
+*.gcov
+overflow_test
+recursion_test
+tests/repro_issues
+tests/repro_overflow
+tests/test_escape
+tests/unit_parse_deep
 
 # Editor files
 *.swp
