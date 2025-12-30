@@ -20,31 +20,61 @@ static VisitState* VISIT_STATES = NULL;
 
 // -- Code Emission --
 
+static int val_to_c_expr_rec(Value* v, DString* ds) {
+    if (!v || v->tag == T_NIL) {
+        ds_append(ds, "NULL");
+        return 1;
+    }
+    switch (v->tag) {
+        case T_CODE:
+            ds_append(ds, v->s);
+            return 1;
+        case T_INT:
+            ds_printf(ds, "mk_int(%ld)", v->i);
+            return 1;
+        case T_CELL:
+            ds_append(ds, "mk_pair(");
+            if (!val_to_c_expr_rec(car(v), ds)) return 0;
+            ds_append(ds, ", ");
+            if (!val_to_c_expr_rec(cdr(v), ds)) return 0;
+            ds_append(ds, ")");
+            return 1;
+        default:
+            return 0;
+    }
+}
+
+char* val_to_c_expr(Value* v) {
+    DString* ds = ds_new();
+    if (!ds) return NULL;
+    if (!val_to_c_expr_rec(v, ds)) {
+        ds_free(ds);
+        return NULL;
+    }
+    return ds_take(ds);
+}
+
 Value* emit_c_call(const char* fn, Value* a, Value* b) {
-    char* sa = (a->tag == T_CODE) ? a->s : val_to_str(a);
-    char* sb = (b->tag == T_CODE) ? b->s : val_to_str(b);
+    char* sa = val_to_c_expr(a);
+    char* sb = val_to_c_expr(b);
 
-    DString* ca = ds_new();
-    DString* cb = ds_new();
-
-    if (a->tag == T_INT) ds_printf(ca, "mk_int(%ld)", a->i);
-    else ds_append(ca, sa);
-
-    if (b->tag == T_INT) ds_printf(cb, "mk_int(%ld)", b->i);
-    else ds_append(cb, sb);
+    if (!sa || !sb) {
+        fprintf(stderr, "Error: cannot emit C for non-literal argument\n");
+        free(sa);
+        free(sb);
+        return mk_code("mk_int(0)");
+    }
 
     DString* ds = ds_new();
-    ds_printf(ds, "%s(%s, %s)", fn, ds_cstr(ca), ds_cstr(cb));
+    ds_printf(ds, "%s(%s, %s)", fn, sa, sb);
 
-    if (a->tag != T_CODE) free(sa);
-    if (b->tag != T_CODE) free(sb);
-
-    ds_free(ca);
-    ds_free(cb);
+    free(sa);
+    free(sb);
     return mk_code(ds_take(ds));
 }
 
 Value* lift_value(Value* v) {
+    if (!v) return NULL;
     if (v->tag == T_CODE) return v;
     if (v->tag == T_INT) {
         DString* ds = ds_new();
@@ -63,8 +93,10 @@ void gen_asap_scanner(const char* type_name, int is_list) {
     printf("  if (!x || x->scan_tag) return;\n");
     printf("  x->scan_tag = 1;\n");
     if (is_list) {
-        printf("  scan_%s(x->a);\n", type_name);
-        printf("  scan_%s(x->b);\n", type_name);
+        printf("  if (x->is_pair) {\n");
+        printf("    scan_%s(x->a);\n", type_name);
+        printf("    scan_%s(x->b);\n", type_name);
+        printf("  }\n");
     }
     printf("}\n\n");
 
@@ -72,8 +104,10 @@ void gen_asap_scanner(const char* type_name, int is_list) {
     printf("  if (!x || !x->scan_tag) return;\n");
     printf("  x->scan_tag = 0;\n");
     if (is_list) {
-        printf("  clear_marks_%s(x->a);\n", type_name);
-        printf("  clear_marks_%s(x->b);\n", type_name);
+        printf("  if (x->is_pair) {\n");
+        printf("    clear_marks_%s(x->a);\n", type_name);
+        printf("    clear_marks_%s(x->b);\n", type_name);
+        printf("  }\n");
     }
     printf("}\n");
 }
@@ -254,7 +288,7 @@ void gen_field_aware_scanner(const char* type_name) {
     printf("  x->scan_tag = 1;\n");
 
     for (int i = 0; i < t->field_count; i++) {
-        if (t->fields[i].is_scannable) {
+        if (t->fields[i].is_scannable && t->fields[i].strength == FIELD_STRONG) {
             printf("  scan_%s(x->%s);\n", t->fields[i].type, t->fields[i].name);
         }
     }
@@ -447,7 +481,8 @@ void gen_runtime_header(void) {
 
     printf("#include <stdlib.h>\n");
     printf("#include <stdio.h>\n");
-    printf("#include <limits.h>\n\n");
+    printf("#include <limits.h>\n");
+    printf("#include <stdint.h>\n\n");
     printf("void invalidate_weak_refs_for(void* target);\n\n");
 
     printf("typedef struct Obj {\n");
@@ -473,6 +508,13 @@ void gen_runtime_header(void) {
     printf("Obj STACK_POOL[STACK_POOL_SIZE];\n");
     printf("int STACK_PTR = 0;\n\n");
 
+    printf("static int is_stack_obj(Obj* x) {\n");
+    printf("    uintptr_t px = (uintptr_t)x;\n");
+    printf("    uintptr_t start = (uintptr_t)&STACK_POOL[0];\n");
+    printf("    uintptr_t end = (uintptr_t)&STACK_POOL[STACK_POOL_SIZE];\n");
+    printf("    return px >= start && px < end;\n");
+    printf("}\n\n");
+
     // Constructors
     printf("Obj* mk_int(long i) {\n");
     printf("    Obj* x = malloc(sizeof(Obj));\n");
@@ -493,7 +535,7 @@ void gen_runtime_header(void) {
     printf("// TREE: Direct free (ASAP)\n");
     printf("void free_tree(Obj* x) {\n");
     printf("    if (!x) return;\n");
-    printf("    if (x >= STACK_POOL && x < STACK_POOL + STACK_POOL_SIZE) return;\n");
+    printf("    if (is_stack_obj(x)) return;\n");
     printf("    if (x->is_pair) {\n");
         printf("        free_tree(x->a);\n");
         printf("        free_tree(x->b);\n");
@@ -505,7 +547,7 @@ void gen_runtime_header(void) {
     printf("// DAG: Reference counting\n");
     printf("void dec_ref(Obj* x) {\n");
     printf("    if (!x) return;\n");
-    printf("    if (x >= STACK_POOL && x < STACK_POOL + STACK_POOL_SIZE) return;\n");
+    printf("    if (is_stack_obj(x)) return;\n");
     printf("    if (x->mark < 0) return;\n");
     printf("    x->mark--;\n");
     printf("    if (x->mark <= 0) {\n");
@@ -520,7 +562,7 @@ void gen_runtime_header(void) {
 
     printf("void inc_ref(Obj* x) {\n");
     printf("    if (!x) return;\n");
-    printf("    if (x >= STACK_POOL && x < STACK_POOL + STACK_POOL_SIZE) return;\n");
+    printf("    if (is_stack_obj(x)) return;\n");
     printf("    if (x->mark < 0) { x->mark = 1; return; }\n");
     printf("    x->mark++;\n");
     printf("}\n\n");
@@ -528,7 +570,7 @@ void gen_runtime_header(void) {
     // Free list operations
     printf("void free_obj(Obj* x) {\n");
     printf("    if (!x) return;\n");
-    printf("    if (x >= STACK_POOL && x < STACK_POOL + STACK_POOL_SIZE) return;\n");
+    printf("    if (is_stack_obj(x)) return;\n");
     printf("    if (x->mark < 0) return;\n");
     printf("    x->mark = -1;\n");
     printf("    FreeNode* n = malloc(sizeof(FreeNode));\n");

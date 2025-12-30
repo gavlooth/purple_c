@@ -22,6 +22,7 @@ void test_deferred_create_destroy(void) {
     if (ctx->pending != NULL) { FAIL("pending should be NULL"); free_deferred_context(ctx); return; }
     if (ctx->pending_count != 0) { FAIL("pending_count should be 0"); free_deferred_context(ctx); return; }
     if (!ctx->obj_lookup) { FAIL("obj_lookup should be created"); free_deferred_context(ctx); return; }
+    if (ctx->dropped_decrements != 0) { FAIL("dropped_decrements should start at 0"); free_deferred_context(ctx); return; }
 
     free_deferred_context(ctx);
 
@@ -29,6 +30,7 @@ void test_deferred_create_destroy(void) {
     DeferredContext* ctx2 = mk_deferred_context(0);
     if (!ctx2) { FAIL("mk_deferred_context(0) returned NULL"); return; }
     if (ctx2->batch_size != 32) { FAIL("default batch_size should be 32"); free_deferred_context(ctx2); return; }
+    if (ctx2->dropped_decrements != 0) { FAIL("dropped_decrements should start at 0"); free_deferred_context(ctx2); return; }
     free_deferred_context(ctx2);
 
     // Test free NULL (should not crash)

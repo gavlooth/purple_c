@@ -15,6 +15,7 @@ DeferredContext* mk_deferred_context(int batch_size) {
     ctx->pending_count = 0;
     ctx->batch_size = batch_size > 0 ? batch_size : 32;
     ctx->total_deferred = 0;
+    ctx->dropped_decrements = 0;
     return ctx;
 }
 
@@ -46,7 +47,10 @@ void defer_decrement(DeferredContext* ctx, void* obj) {
 
     // Add new entry
     d = malloc(sizeof(DeferredDec));
-    if (!d) return;  // Allocation failed
+    if (!d) {
+        ctx->dropped_decrements++;
+        return;  // Allocation failed
+    }
     d->obj = obj;
     d->count = 1;
     d->next = ctx->pending;
@@ -133,7 +137,19 @@ void gen_deferred_runtime(void) {
     printf("        d = d->hash_next;\n");
     printf("    }\n");
     printf("    d = malloc(sizeof(DeferredDec));\n");
-    printf("    if (!d) return;\n");
+    printf("    if (!d) {\n");
+    printf("        // OOM fallback: apply decrement immediately\n");
+    printf("        obj->mark--;\n");
+    printf("        if (obj->mark <= 0) {\n");
+    printf("            if (obj->is_pair) {\n");
+    printf("                if (obj->a) defer_dec(obj->a);\n");
+    printf("                if (obj->b) defer_dec(obj->b);\n");
+    printf("            }\n");
+    printf("            invalidate_weak_refs_for(obj);\n");
+    printf("            free(obj);\n");
+    printf("        }\n");
+    printf("        return;\n");
+    printf("    }\n");
     printf("    d->obj = obj;\n");
     printf("    d->count = 1;\n");
     printf("    d->next = DEFERRED_HEAD;\n");

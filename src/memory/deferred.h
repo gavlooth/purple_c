@@ -22,6 +22,7 @@ typedef struct DeferredContext {
     int pending_count;
     int batch_size;       // Max decrements per safe point
     int total_deferred;   // Statistics
+    int dropped_decrements; // Count of decrements lost to OOM
 } DeferredContext;
 
 // Context management

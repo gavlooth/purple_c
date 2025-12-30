@@ -74,12 +74,21 @@ static void test_value_null_checks(void) {
     printf("  test_value_null_checks... ");
 
     // Test that mk_sym handles NULL string
-    Value* v = mk_sym(NULL);
-    assert(v != NULL);  // Should still create value
+    Value* sym = mk_sym(NULL);
+    assert(sym != NULL);  // Should still create value
+    char* sym_str = val_to_str(sym);
+    assert(sym_str != NULL);
+    assert(strcmp(sym_str, "") == 0);
+    free(sym_str);
+    assert(sym_eq_str(sym, "") == 1);
 
     // Test that mk_code handles NULL string
-    v = mk_code(NULL);
-    assert(v != NULL);
+    Value* code = mk_code(NULL);
+    assert(code != NULL);
+    char* code_str = val_to_str(code);
+    assert(code_str != NULL);
+    assert(strcmp(code_str, "") == 0);
+    free(code_str);
 
     printf("PASS\n");
 }

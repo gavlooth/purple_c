@@ -23,6 +23,7 @@ Value* SYM_EM = NULL;
 Value* SYM_SCAN = NULL;
 Value* SYM_GET_META = NULL;
 Value* SYM_SET_META = NULL;
+static Value* SYM_UNINIT = NULL;
 
 void init_syms(void) {
     NIL = alloc_val(T_NIL);
@@ -40,6 +41,10 @@ void init_syms(void) {
     SYM_SCAN = mk_sym("scan");
     SYM_GET_META = mk_sym("get-meta");
     SYM_SET_META = mk_sym("set-meta!");
+    SYM_UNINIT = alloc_val(T_PRIM);
+    if (SYM_UNINIT) {
+        SYM_UNINIT->prim = NULL;
+    }
 }
 
 // -- Environment --
@@ -89,6 +94,10 @@ Value* h_var_default(Value* exp, Value* menv) {
     Value* v = env_lookup(menv->menv.env, exp);
     if (!v) {
         printf("Error: Unbound %s\n", exp->s);
+        return NIL;
+    }
+    if (v == SYM_UNINIT) {
+        printf("Error: Uninitialized letrec binding %s\n", exp->s);
         return NIL;
     }
     return v;
@@ -150,6 +159,7 @@ Value* h_let_default(Value* exp, Value* menv) {
     Value* body = car(cdr(args));
 
     int any_code = 0;
+    int oom = 0;
     Value* check_bindings = bindings;
     Value* new_env = menv->menv.env;
 
@@ -165,7 +175,10 @@ Value* h_let_default(Value* exp, Value* menv) {
         if (val->tag == T_CODE) any_code = 1;
 
         BindingInfo* info = malloc(sizeof(BindingInfo));
-        if (!info) continue;  // Skip on allocation failure
+        if (!info) {
+            oom = 1;
+            break;
+        }
         info->sym = sym;
         info->val = val;
         info->next = NULL;
@@ -178,6 +191,31 @@ Value* h_let_default(Value* exp, Value* menv) {
         }
 
         check_bindings = cdr(check_bindings);
+    }
+
+    if (oom) {
+        printf("Error: Out of memory while building let bindings\n");
+        while (bind_list) {
+            BindingInfo* next = bind_list->next;
+            free(bind_list);
+            bind_list = next;
+        }
+        return NIL;
+    }
+
+    if (any_code) {
+        BindingInfo* b = bind_list;
+        while (b) {
+            if (b->val->tag != T_CODE) {
+                char* tmp = val_to_c_expr(b->val);
+                if (!tmp) {
+                    any_code = 0;
+                    break;
+                }
+                free(tmp);
+            }
+            b = b->next;
+        }
     }
 
     if (any_code) {
@@ -206,7 +244,16 @@ Value* h_let_default(Value* exp, Value* menv) {
             ShapeInfo* shape_info = find_shape(shape_ctx, b->sym->s);
             Shape var_shape = shape_info ? shape_info->shape : SHAPE_UNKNOWN;
 
-            char* val_str = (b->val->tag == T_CODE) ? b->val->s : val_to_str(b->val);
+            char* val_str = NULL;
+            if (b->val->tag == T_CODE) {
+                val_str = b->val->s;
+            } else {
+                val_str = val_to_c_expr(b->val);
+                if (!val_str) {
+                    printf("Error: cannot compile non-literal let binding for %s\n", b->sym->s);
+                    break;
+                }
+            }
 
             if (b->val->tag != T_CODE) {
                 if (b->val->tag == T_INT) {
@@ -243,6 +290,17 @@ Value* h_let_default(Value* exp, Value* menv) {
 
             if (b->val->tag != T_CODE) free(val_str);
             b = b->next;
+        }
+
+        if (b) {
+            ds_free(all_decls);
+            ds_free(all_frees);
+            while (bind_list) {
+                BindingInfo* next = bind_list->next;
+                free(bind_list);
+                bind_list = next;
+            }
+            return NIL;
         }
 
         Value* body_menv = mk_menv(menv->menv.parent, new_env);
@@ -343,12 +401,12 @@ Value* eval(Value* expr, Value* menv) {
             // First pass: extend env with placeholders
             Value* new_env = menv->menv.env;
             Value* b = bindings;
-            while (!is_nil(b)) {
-                Value* bind = car(b);
-                Value* sym = car(bind);
-                new_env = env_extend(new_env, sym, NIL);  // Placeholder
-                b = cdr(b);
-            }
+        while (!is_nil(b)) {
+            Value* bind = car(b);
+            Value* sym = car(bind);
+            new_env = env_extend(new_env, sym, SYM_UNINIT);  // Placeholder
+            b = cdr(b);
+        }
 
             // Create new menv for evaluating bindings
             Value* rec_menv = mk_menv(menv->menv.parent, new_env);

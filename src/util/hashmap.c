@@ -36,6 +36,7 @@ HashMap* hashmap_with_capacity(size_t capacity) {
     map->bucket_count = capacity;
     map->entry_count = 0;
     map->load_factor = MAX_LOAD_FACTOR;
+    map->had_alloc_failure = 0;
     return map;
 }
 
@@ -67,7 +68,10 @@ void hashmap_free_entries(HashMap* map) {
 static void hashmap_resize(HashMap* map) {
     size_t new_count = map->bucket_count * 2;
     HashEntry** new_buckets = calloc(new_count, sizeof(HashEntry*));
-    if (!new_buckets) return;  // Keep old buckets on failure
+    if (!new_buckets) {
+        map->had_alloc_failure = 1;
+        return;  // Keep old buckets on failure
+    }
 
     // Rehash all entries
     for (size_t i = 0; i < map->bucket_count; i++) {
@@ -123,7 +127,10 @@ void hashmap_put(HashMap* map, void* key, void* value) {
 
     // Create new entry
     entry = malloc(sizeof(HashEntry));
-    if (!entry) return;
+    if (!entry) {
+        map->had_alloc_failure = 1;
+        return;
+    }
 
     entry->key = key;
     entry->value = value;
@@ -189,4 +196,8 @@ size_t hashmap_size(HashMap* map) {
 // Clear all entries
 void hashmap_clear(HashMap* map) {
     hashmap_free_entries(map);
+}
+
+int hashmap_had_alloc_failure(HashMap* map) {
+    return map ? map->had_alloc_failure : 0;
 }

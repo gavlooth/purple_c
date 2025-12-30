@@ -95,6 +95,7 @@ void gen_concurrent_runtime(void) {
     printf("// Allocate concurrent object\n");
     printf("ConcObj* conc_mk_int(long val) {\n");
     printf("    ConcObj* obj = malloc(sizeof(ConcObj));\n");
+    printf("    if (!obj) return NULL;\n");
     printf("    atomic_init(&obj->rc, 1);\n");
     printf("    obj->owner_thread = THREAD_ID;\n");
     printf("    obj->is_immutable = 0;\n");
@@ -105,6 +106,7 @@ void gen_concurrent_runtime(void) {
 
     printf("ConcObj* conc_mk_pair(ConcObj* a, ConcObj* b) {\n");
     printf("    ConcObj* obj = malloc(sizeof(ConcObj));\n");
+    printf("    if (!obj) return NULL;\n");
     printf("    atomic_init(&obj->rc, 1);\n");
     printf("    obj->owner_thread = THREAD_ID;\n");
     printf("    obj->is_immutable = 0;\n");
@@ -131,7 +133,9 @@ void gen_concurrent_runtime(void) {
     printf("// Create message channel\n");
     printf("MsgChannel* channel_create(int capacity) {\n");
     printf("    MsgChannel* ch = malloc(sizeof(MsgChannel));\n");
+    printf("    if (!ch) return NULL;\n");
     printf("    ch->buffer = malloc(capacity * sizeof(void*));\n");
+    printf("    if (!ch->buffer) { free(ch); return NULL; }\n");
     printf("    ch->capacity = capacity;\n");
     printf("    atomic_init(&ch->head, 0);\n");
     printf("    atomic_init(&ch->tail, 0);\n");
@@ -145,7 +149,7 @@ void gen_concurrent_runtime(void) {
     // Send with ownership transfer
     printf("// Send message (transfers ownership, increments RC for safe sender cleanup)\n");
     printf("int channel_send(MsgChannel* ch, ConcObj* obj) {\n");
-    printf("    if (!obj) return -1;\n");
+    printf("    if (!ch || !obj) return -1;\n");
     printf("    if (atomic_load(&ch->closed)) return -1;\n");
     printf("    pthread_mutex_lock(&ch->mutex);\n");
     printf("    int tail = atomic_load(&ch->tail);\n");
@@ -156,6 +160,8 @@ void gen_concurrent_runtime(void) {
     printf("            pthread_mutex_unlock(&ch->mutex);\n");
     printf("            return -1;\n");
     printf("        }\n");
+    printf("        tail = atomic_load(&ch->tail);\n");
+    printf("        head = atomic_load(&ch->head);\n");
     printf("    }\n");
     printf("    // Increment RC so sender can safely dec_ref after send\n");
     printf("    atomic_fetch_add(&obj->rc, 1);\n");
@@ -170,6 +176,7 @@ void gen_concurrent_runtime(void) {
     // Receive with ownership transfer
     printf("// Receive message (receives ownership)\n");
     printf("ConcObj* channel_recv(MsgChannel* ch) {\n");
+    printf("    if (!ch) return NULL;\n");
     printf("    pthread_mutex_lock(&ch->mutex);\n");
     printf("    int head = atomic_load(&ch->head);\n");
     printf("    int tail = atomic_load(&ch->tail);\n");
@@ -179,6 +186,8 @@ void gen_concurrent_runtime(void) {
     printf("            return NULL;\n");
     printf("        }\n");
     printf("        pthread_cond_wait(&ch->not_empty, &ch->mutex);\n");
+    printf("        head = atomic_load(&ch->head);\n");
+    printf("        tail = atomic_load(&ch->tail);\n");
     printf("    }\n");
     printf("    ConcObj* obj = ch->buffer[head];\n");
     printf("    // Take ownership: receiver becomes owner\n");
@@ -227,6 +236,7 @@ void gen_concurrent_runtime(void) {
 
     printf("pthread_t spawn_thread(void* (*fn)(void*), void* arg) {\n");
     printf("    SpawnArgs* sa = malloc(sizeof(SpawnArgs));\n");
+    printf("    if (!sa) return (pthread_t)0;\n");
     printf("    sa->fn = fn;\n");
     printf("    sa->arg = arg;\n");
     printf("    sa->thread_id = next_thread_id++;\n");

@@ -339,9 +339,9 @@ static int has_no_mutations(const char* var, Value* expr) {
         Value* args = cdr(expr);
 
         // Check for set! on this variable
-        if (op->tag == T_SYM && strcmp(op->s, "set!") == 0) {
+        if (op && op->tag == T_SYM && strcmp(op->s, "set!") == 0) {
             Value* target = car(args);
-            if (target->tag == T_SYM && strcmp(target->s, var) == 0) {
+            if (target && target->tag == T_SYM && strcmp(target->s, var) == 0) {
                 return 0;  // Found mutation
             }
         }
@@ -407,6 +407,7 @@ void gen_scc_runtime(void) {
     printf("TarjanNode* TARJAN_NODES = NULL;\n");
     printf("TarjanStack* TARJAN_STACK = NULL;\n");
     printf("int TARJAN_INDEX = 0;\n\n");
+    printf("int TARJAN_OOM = 0;\n\n");
 
     printf("static size_t tarjan_hash_ptr(void* p) {\n");
     printf("    size_t x = (size_t)p;\n");
@@ -424,7 +425,7 @@ void gen_scc_runtime(void) {
     printf("    }\n");
     printf("    // Create new node\n");
     printf("    n = malloc(sizeof(TarjanNode));\n");
-    printf("    if (!n) return NULL;\n");
+    printf("    if (!n) { TARJAN_OOM = 1; return NULL; }\n");
     printf("    n->obj = obj;\n");
     printf("    n->index = -1;\n");
     printf("    n->lowlink = -1;\n");
@@ -438,6 +439,7 @@ void gen_scc_runtime(void) {
 
     printf("void tarjan_stack_push(Obj* obj) {\n");
     printf("    TarjanStack* s = malloc(sizeof(TarjanStack));\n");
+    printf("    if (!s) { TARJAN_OOM = 1; return; }\n");
     printf("    s->obj = obj;\n");
     printf("    s->next = TARJAN_STACK;\n");
     printf("    TARJAN_STACK = s;\n");
@@ -484,7 +486,7 @@ void gen_scc_runtime(void) {
 
     printf("static int push_work_frame(TarjanWorkFrame** stack, Obj* v, TarjanState state) {\n");
     printf("    TarjanWorkFrame* f = malloc(sizeof(TarjanWorkFrame));\n");
-    printf("    if (!f) return 0;\n");
+    printf("    if (!f) { TARJAN_OOM = 1; return 0; }\n");
     printf("    f->v = v;\n");
     printf("    f->node = NULL;\n");
     printf("    f->state = state;\n");
@@ -505,15 +507,17 @@ void gen_scc_runtime(void) {
     printf("void tarjan_strongconnect(Obj* root_obj, SCC** result) {\n");
     printf("    if (!root_obj) return;\n");
     printf("    TarjanWorkFrame* work_stack = NULL;\n");
-    printf("    push_work_frame(&work_stack, root_obj, TARJAN_INIT);\n\n");
+    printf("    if (!push_work_frame(&work_stack, root_obj, TARJAN_INIT)) return;\n\n");
 
     printf("    while (work_stack) {\n");
     printf("        TarjanWorkFrame* frame = work_stack;\n");
     printf("        Obj* v = frame->v;\n\n");
+    printf("        if (TARJAN_OOM) return;\n\n");
 
     printf("        switch (frame->state) {\n");
     printf("        case TARJAN_INIT: {\n");
     printf("            TarjanNode* node = get_tarjan_node(v);\n");
+    printf("            if (!node) { TARJAN_OOM = 1; free(pop_work_frame(&work_stack)); return; }\n");
     printf("            if (node->index >= 0) {\n");
     printf("                free(pop_work_frame(&work_stack));\n");
     printf("                break;\n");
@@ -522,6 +526,7 @@ void gen_scc_runtime(void) {
     printf("            node->lowlink = TARJAN_INDEX;\n");
     printf("            TARJAN_INDEX++;\n");
     printf("            tarjan_stack_push(v);\n");
+    printf("            if (TARJAN_OOM) { free(pop_work_frame(&work_stack)); return; }\n");
     printf("            node->on_stack = 1;\n");
     printf("            frame->node = node;\n");
     printf("            frame->state = TARJAN_AFTER_A;\n\n");
@@ -530,7 +535,7 @@ void gen_scc_runtime(void) {
     printf("                TarjanNode* w = get_tarjan_node(v->a);\n");
     printf("                if (w->index < 0) {\n");
     printf("                    frame->pushed_a = 1;\n");
-    printf("                    push_work_frame(&work_stack, v->a, TARJAN_INIT);\n");
+    printf("                    if (!push_work_frame(&work_stack, v->a, TARJAN_INIT)) { free(pop_work_frame(&work_stack)); return; }\n");
     printf("                } else if (w->on_stack) {\n");
     printf("                    if (node->lowlink > w->index) node->lowlink = w->index;\n");
     printf("                }\n");
@@ -550,7 +555,7 @@ void gen_scc_runtime(void) {
     printf("                TarjanNode* w = get_tarjan_node(v->b);\n");
     printf("                if (w->index < 0) {\n");
     printf("                    frame->pushed_b = 1;\n");
-    printf("                    push_work_frame(&work_stack, v->b, TARJAN_INIT);\n");
+    printf("                    if (!push_work_frame(&work_stack, v->b, TARJAN_INIT)) { free(pop_work_frame(&work_stack)); return; }\n");
     printf("                } else if (w->on_stack) {\n");
     printf("                    if (node->lowlink > w->index) node->lowlink = w->index;\n");
     printf("                }\n");
@@ -567,8 +572,10 @@ void gen_scc_runtime(void) {
 
     printf("            if (node->lowlink == node->index) {\n");
     printf("                SCC* scc = malloc(sizeof(SCC));\n");
+    printf("                if (!scc) { TARJAN_OOM = 1; free(pop_work_frame(&work_stack)); return; }\n");
     printf("                scc->id = SCC_NEXT_ID++;\n");
     printf("                scc->members = malloc(16 * sizeof(Obj*));\n");
+    printf("                if (!scc->members) { free(scc); TARJAN_OOM = 1; free(pop_work_frame(&work_stack)); return; }\n");
     printf("                scc->member_count = 0;\n");
     printf("                scc->capacity = 16;\n");
     printf("                scc->ref_count = 1;\n");
@@ -583,7 +590,9 @@ void gen_scc_runtime(void) {
     printf("                    w->scc_id = scc->id;\n");
     printf("                    if (scc->member_count >= scc->capacity) {\n");
     printf("                        scc->capacity *= 2;\n");
-    printf("                        scc->members = realloc(scc->members, scc->capacity * sizeof(Obj*));\n");
+    printf("                        Obj** new_members = realloc(scc->members, scc->capacity * sizeof(Obj*));\n");
+    printf("                        if (!new_members) { TARJAN_OOM = 1; free(pop_work_frame(&work_stack)); return; }\n");
+    printf("                        scc->members = new_members;\n");
     printf("                    }\n");
     printf("                    scc->members[scc->member_count++] = w;\n");
     printf("                } while (w != v);\n");

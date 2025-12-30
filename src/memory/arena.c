@@ -74,6 +74,7 @@ void arena_reset(Arena* a) {
 void arena_register_external(Arena* a, void* ptr, ArenaReleaseFn release) {
     if (!a || !ptr || !release) return;
     ArenaExternal* ext = malloc(sizeof(ArenaExternal));
+    if (!ext) return;
     ext->ptr = ptr;
     ext->release = release;
     ext->next = a->externals;
@@ -155,6 +156,7 @@ void gen_arena_runtime(void) {
     printf("void arena_register_external(Arena* a, void* ptr, ArenaReleaseFn release) {\n");
     printf("    if (!a || !ptr || !release) return;\n");
     printf("    ArenaExternal* ext = malloc(sizeof(ArenaExternal));\n");
+    printf("    if (!ext) return;\n");
     printf("    ext->ptr = ptr;\n");
     printf("    ext->release = release;\n");
     printf("    ext->next = a->externals;\n");

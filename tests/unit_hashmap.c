@@ -19,6 +19,7 @@ void test_hashmap_create_destroy(void) {
     HashMap* map = hashmap_new();
     if (!map) { FAIL("hashmap_new returned NULL"); return; }
     if (hashmap_size(map) != 0) { FAIL("new map should be empty"); hashmap_free(map); return; }
+    if (hashmap_had_alloc_failure(map)) { FAIL("alloc failure flag should start false"); hashmap_free(map); return; }
 
     hashmap_free(map);
 
@@ -47,6 +48,7 @@ void test_hashmap_put_get(void) {
 
     hashmap_put(map, &key1, val1);
     if (hashmap_size(map) != 1) { FAIL("size should be 1"); hashmap_free(map); return; }
+    if (hashmap_had_alloc_failure(map)) { FAIL("alloc failure flag should remain false"); hashmap_free(map); return; }
 
     char* result = (char*)hashmap_get(map, &key1);
     if (result != val1) { FAIL("get returned wrong value"); hashmap_free(map); return; }

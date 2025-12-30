@@ -9,24 +9,121 @@ Items below are grouped by status.
 
 ## Open (no failing break test yet)
 
-- None
+28) **[Concurrent]** Unchecked `malloc` in `concurrent.c` (host & generated)
+    - Functions: `conc_mk_int`, `conc_mk_pair`, `channel_create`, `spawn_thread`
+    - Risk: Segfault on OOM
+
+29) **[Arena]** Unchecked `malloc` in `arena_register_external` (host & generated)
+    - Risk: Segfault on OOM
+
+30) **[SCC]** Unchecked `malloc`/`realloc` in generated SCC runtime
+    - Location: `gen_scc_runtime` (generated `tarjan_strongconnect`)
+    - Risk: Segfault or memory corruption on OOM
+
+31) **[HashMap]** Silent failure on allocation
+    - `hashmap_put`: Drops entry if `malloc` fails
+    - `hashmap_resize`: Skips resize if `calloc` fails (degraded performance)
+
+32) **[Deferred]** Silent failure in `defer_decrement` (host & generated)
+    - Risk: Memory leak if `malloc` fails (decrement lost)
+
+33) **[Compiler]** Silent failure in `h_let_default` allocation
+    - Risk: Skips binding on OOM, leading to compilation error (unbound var) or runtime undefined behavior
+
+34) **[Compiler]** Invalid C codegen for complex literals in `let`
+    - Issue: `let` binds `val_to_str` directly. Lists/Symbols produce invalid C (e.g., `Obj* x = (1 2);`)
+
+35) **[Compiler]** `letrec` value placeholder semantics
+    - Issue: Referencing a `letrec` variable in its own definition returns `NIL` instead of error/looping
+
+36) **[Memory]** Silent failure in `compiler_arena_register_string`
+    - Risk: Leaks `strdup`ed strings on OOM if node allocation fails
+
+37) **[Parser]** `strtol` error checking missing
+    - `strtol` in `parser.c` doesn't check `errno` for overflow.
+
+38) **[Codegen]** Unescaped string literals
+    - `val_to_c_expr` in `codegen.c` dumps string content directly. Input `(print "\"; system(\"rm -rf /\"); //")` executes arbitrary C.
+
+39) **[Analysis]** Silent failure in `find_free_vars`
+    - `realloc` failure causes early return, resulting in incomplete closure analysis and runtime crashes (missing captures).
+
+40) **[Parser]** Mismatched parentheses handling
+    - Unexpected `)` causes early return of `NIL` or consumes loop without error, potentially masking syntax errors.
+
+41) **[Main]** Integer overflow in stdin buffer resizing
+    - `cap *= 2` can overflow `size_t`, causing small allocation and subsequent heap overflow.
+
+42) **[Main]** Unescaped input in comments
+    - `printf("// Expression: %s", input_str)` breaks if input contains newlines.
+
+43) **[DPS]** Memory safety in `analyze_dps`
+    - Unchecked `malloc` in `analyze_dps`.
+
+44) **[Exception]** `realloc` logic error in generated runtime
+    - `exc_register_cleanup`: `realloc` failure leads to NULL dereference (segfault) and memory leak.
+
+45) **[Exception]** Unsafe `longjmp` usage
+    - `exc_throw` only cleans up current frame. If nesting logic changes to search for handlers, intermediate cleanups would be skipped.
+
+46) **[Exception]** Unchecked memory in host `exception.c`
+    - `track_alloc` uses unchecked `malloc`/`strdup`.
 
 ## Resolved (break tests passing)
 
-24) **[Parser]** Stack overflow on deep nesting (recursion in `parse`/`parse_list`)
-    - Fix: Implemented iterative parser with explicit stack
-
-25) **[Runtime]** Stack overflow in generated Tarjan runtime
-    - Fix: Generated iterative `tarjan_strongconnect` using `TarjanWorkFrame`
-
-26) **[Compiler]** Buffer overflow in `analyze_back_edges` (fixed `path[256]`)
-    - Fix: Replaced fixed array with dynamic `realloc` array
-
-27) **[Legacy]** Buffer overflows in `main.c`
-    - Fix: Replaced fixed buffers with dynamic reading from stdin/args
-
 1) Invalid C codegen for `if` expressions
    - Test: `IfCodegenC`
+
+2) Cyclic free function mismatch (`deferred_release` missing)
+   - Test: `DeferredReleaseExists`
+
+3) Tarjan traversal lacked `is_pair` guard
+   - Test: `TarjanGuardsIsPair`
+
+4) Deferred RC lacked `is_pair` guard
+   - Test: `DeferredGuardsIsPair`
+
+5) DAG refcounting missing `inc_ref`
+   - Test: `IncRefExists`
+
+6) Weak references not invalidated on release
+   - Test: `WeakInvalidateOnRelease`
+
+7) `free_obj` lacked dedup/guard against pointer reuse
+   - Test: `FreeObjGuardsReuse`
+
+8) SCC runtime did not link SCCs into result list
+   - Test: `SccRuntimeLinksResult`
+
+9) Return-escaped values freed at end of `let`
+   - Test: `EscapeReturnNoFree`
+
+10) Shape analysis ignored `letrec` cycles
+    - Test: `LetrecShapeCyclic` (unit)
+
+11) SCC recomputation after mutation returned stale results
+    - Test: `SccRecomputeAfterMutation` (unit)
+
+12) Immutable RC path was a no-op (leaks for shared frozen)
+    - Test: `ImmutableRcIsNoop`
+
+13) `conc_freeze` lacked guard for already-frozen nodes
+    - Test: `ConcFreezeHasGuard`
+
+14) `scan_*` mutated `mark` (RC) instead of a separate scan tag
+    - Test: `ScanDoesNotTouchMark`
+
+15) SCC runtime used fixed-size arrays without bounds checks
+    - Tests: `SccRuntimeNoFixedArrays`, `SccRegistryNoFixedArrays`
+
+16) Fixed-size buffer overflow risk in `list_to_str`
+    - Test: `ListToStrLarge` (unit)
+
+17) Deeply nested parse regression (stack overflow risk)
+    - Test: `ParseDeepNesting` (unit)
+
+18) **[Arena]** External heap references are leaked when an Arena is destroyed
+    - Test: `ArenaReleasesExternal` (unit)
 
 19) **[Memory]** Interpreter/Compiler leaks all allocated values during execution
     - Fix: Added Phase 12 compiler arena - bulk deallocation at end of main()
@@ -43,53 +140,83 @@ Items below are grouped by status.
 23) **[Reuse]** `try_reuse` overwrites fields without releasing existing pointers
     - Fix: `try_reuse` now releases children before reusing object
 
-2) Cyclic free function mismatch (`deferred_release` missing)  
-   - Test: `DeferredReleaseExists`
+24) **[Parser]** Stack overflow on deep nesting (recursion in `parse`/`parse_list`)
+    - Fix: Implemented iterative parser with explicit stack
 
-3) Tarjan traversal lacked `is_pair` guard  
-   - Test: `TarjanGuardsIsPair`
+25) **[Runtime]** Stack overflow in generated Tarjan runtime
+    - Fix: Generated iterative `tarjan_strongconnect` using `TarjanWorkFrame`
 
-4) Deferred RC lacked `is_pair` guard  
-   - Test: `DeferredGuardsIsPair`
+26) **[Compiler]** Buffer overflow in `analyze_back_edges` (fixed `path[256]`)
+    - Fix: Replaced fixed array with dynamic `realloc` array
 
-5) DAG refcounting missing `inc_ref`  
-   - Test: `IncRefExists`
+27) **[Legacy]** Buffer overflows in `main.c`
+    - Fix: Replaced fixed buffers with dynamic reading from stdin/args
 
-6) Weak references not invalidated on release  
-   - Test: `WeakInvalidateOnRelease`
+28) **[Concurrent]** Unchecked `malloc` in `concurrent.c` (host & generated)
+    - Fix: Added NULL checks in generated runtime (`conc_mk_int`, `conc_mk_pair`, `channel_create`, `spawn_thread`) and channel guard
 
-7) `free_obj` lacked dedup/guard against pointer reuse  
-   - Test: `FreeObjGuardsReuse`
+29) **[Arena]** Unchecked `malloc` in `arena_register_external` (host & generated)
+    - Fix: Added NULL checks in host and generated runtime
 
-8) SCC runtime did not link SCCs into result list  
-   - Test: `SccRuntimeLinksResult`
+30) **[SCC]** Unchecked `malloc`/`realloc` in generated SCC runtime
+    - Fix: Added TARJAN_OOM flag and allocation guards in generated Tarjan
 
-9) Return-escaped values freed at end of `let`  
-   - Test: `EscapeReturnNoFree`
+31) **[HashMap]** Silent failure on allocation
+    - Fix: Track allocation failures via `had_alloc_failure` flag
 
-10) Shape analysis ignored `letrec` cycles  
-    - Test: `LetrecShapeCyclic` (unit)
+32) **[Deferred]** Silent failure in `defer_decrement` (host & generated)
+    - Fix: Track `dropped_decrements` and add immediate decrement fallback in generated runtime
 
-11) SCC recomputation after mutation returned stale results  
-    - Test: `SccRecomputeAfterMutation` (unit)
+33) **[Compiler]** Silent failure in `h_let_default` allocation
+    - Fix: Abort `let` with an error on OOM
 
-12) Immutable RC path was a no-op (leaks for shared frozen)  
-    - Test: `ImmutableRcIsNoop`
+34) **[Compiler]** Invalid C codegen for complex literals in `let`
+    - Fix: Emit C literals via `val_to_c_expr`; unsupported literals fall back to interpreter/error
 
-13) `conc_freeze` lacked guard for already-frozen nodes  
-    - Test: `ConcFreezeHasGuard`
+35) **[Compiler]** `letrec` value placeholder semantics
+    - Fix: Use uninitialized sentinel; error on access before initialization
 
-14) `scan_*` mutated `mark` (RC) instead of a separate scan tag  
-    - Test: `ScanDoesNotTouchMark`
+36) **[Memory]** Silent failure in `compiler_arena_register_string`
+    - Fix: Allocate tracking nodes in the arena and warn on OOM
 
-15) SCC runtime used fixed-size arrays without bounds checks  
-    - Tests: `SccRuntimeNoFixedArrays`, `SccRegistryNoFixedArrays`
+37) **[Arena]** Compiler arena never actually used, so Values leak
+    - Fix: Allocate an initial arena block in `compiler_arena_init`
 
-16) Fixed-size buffer overflow risk in `list_to_str`  
-    - Test: `ListToStrLarge` (unit)
+38) **[ASAP Scanner]** Generated list scanner can recurse into non-pairs (undefined behavior)
+    - Fix: Add `is_pair` guard for `scan_List` and `clear_marks_List`
 
-17) Deeply nested parse regression (stack overflow risk)  
-    - Test: `ParseDeepNesting` (unit)
+39) **[Weak/Scanner]** Field-aware scanner traverses weak fields with the wrong type
+    - Fix: Skip weak fields in scanner generation
 
-18) **[Arena]** External heap references are leaked when an Arena is destroyed  
-    - Test: `ArenaReleasesExternal` (unit)
+40) **[Concurrency]** Channel send/recv can deadlock after `pthread_cond_wait`
+    - Fix: Reload `head`/`tail` after each wait
+
+41) **[Runtime]** Pointer-range checks in `free_tree`/`dec_ref` are UB
+    - Fix: Use `uintptr_t`-based `is_stack_obj` helper
+
+42) **[Codegen]** Mixed code/non-code non-int values can emit invalid C
+    - Fix: Use `val_to_c_expr` in `emit_c_call`/`let` and error on unsupported literals
+
+43) **[Symbols]** `mk_sym(NULL)` produces values that crash `sym_eq`/`val_to_str`
+    - Fix: Coerce NULL to empty string in `mk_sym`/`mk_code` and guard comparisons
+
+44) **[Shape]** NULL dereference in `analyze_shapes_expr` when `car(expr)` returns NULL
+    - Fix: Added NULL check before accessing `op->tag` in shape.c
+
+45) **[Shape]** NULL dereference when accessing `sym->s` in let/letrec bindings
+    - Fix: Added `sym && sym->tag == T_SYM` guards before accessing `sym->s`
+
+46) **[SCC]** NULL dereference in `has_no_mutations` when `car(expr)` returns NULL
+    - Fix: Added NULL check before accessing `op->tag` in scc.c
+
+47) **[SCC]** NULL dereference when accessing `target->tag` in `has_no_mutations`
+    - Fix: Added NULL check before accessing `target->tag`
+
+48) **[Codegen]** NULL dereference in `lift_value` when called with NULL
+    - Fix: Added NULL check at start of `lift_value`
+
+49) **[SCC Registry]** Registry corruption when Tarjan overwrites `scc->next`
+    - Fix: Added separate `result_next` field to SCC struct for result list
+
+50) **[SCC Release]** Generated `release_scc` doesn't invalidate weak refs before freeing
+    - Fix: Added `invalidate_weak_refs_for` call before freeing SCC members

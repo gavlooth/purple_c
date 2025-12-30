@@ -22,11 +22,17 @@ static ArenaBlock* compiler_arena_blocks = NULL;
 static ArenaBlock* compiler_arena_current = NULL;
 static StringNode* compiler_strings = NULL;
 static size_t compiler_arena_block_size = 65536;  // 64KB blocks
+static int compiler_arena_string_oom = 0;
+
+static void* compiler_arena_alloc(size_t size);
 
 void compiler_arena_init(void) {
     compiler_arena_blocks = NULL;
     compiler_arena_current = NULL;
     compiler_strings = NULL;
+    compiler_arena_string_oom = 0;
+    // Allocate initial block so compiler allocations use the arena
+    (void)compiler_arena_alloc(0);
 }
 
 static void* compiler_arena_alloc(size_t size) {
@@ -58,9 +64,13 @@ static void* compiler_arena_alloc(size_t size) {
 }
 
 void compiler_arena_register_string(char* s) {
-    if (!s) return;
-    StringNode* node = malloc(sizeof(StringNode));
-    if (!node) return;
+    if (!s || compiler_arena_string_oom) return;
+    StringNode* node = compiler_arena_alloc(sizeof(StringNode));
+    if (!node) {
+        compiler_arena_string_oom = 1;
+        fprintf(stderr, "Warning: OOM tracking compiler string; potential leak\n");
+        return;
+    }
     node->s = s;
     node->next = compiler_strings;
     compiler_strings = node;
@@ -72,7 +82,6 @@ void compiler_arena_cleanup(void) {
     while (sn) {
         StringNode* next = sn->next;
         free(sn->s);
-        free(sn);
         sn = next;
     }
     compiler_strings = NULL;
@@ -111,6 +120,7 @@ Value* mk_int(long i) {
 }
 
 Value* mk_sym(const char* s) {
+    if (!s) s = "";
     Value* v = alloc_val(T_SYM);
     if (!v) return NULL;
     v->s = s ? strdup(s) : NULL;
@@ -141,6 +151,7 @@ Value* mk_prim(PrimFn fn) {
 }
 
 Value* mk_code(const char* s) {
+    if (!s) s = "";
     Value* v = alloc_val(T_CODE);
     if (!v) return NULL;
     v->s = s ? strdup(s) : NULL;
@@ -185,11 +196,13 @@ Value* cdr(Value* v) {
 int sym_eq(Value* s1, Value* s2) {
     if (!s1 || !s2) return 0;
     if (s1->tag != T_SYM || s2->tag != T_SYM) return 0;
+    if (!s1->s || !s2->s) return 0;
     return strcmp(s1->s, s2->s) == 0;
 }
 
 int sym_eq_str(Value* s1, const char* s2) {
     if (!s1 || s1->tag != T_SYM) return 0;
+    if (!s1->s || !s2) return 0;
     return strcmp(s1->s, s2) == 0;
 }
 

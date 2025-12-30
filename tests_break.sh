@@ -363,4 +363,42 @@ output_expect_contains "SccHasResultNext" \
   "(lift 0)" \
   "result_next"
 
+# 32) scan_List should guard is_pair before recursing
+function_body_expect_contains "ScanListGuardsIsPair" \
+  "(lift 0)" \
+  "scan_List" \
+  "if (x->is_pair)"
+
+# 33) channel send/recv should reload head/tail after wait (non-decl assignment)
+output_expect_contains "ChannelReloadsTail" \
+  "(lift 0)" \
+  "    tail = atomic_load(&ch->tail);"
+
+output_expect_contains "ChannelReloadsHead" \
+  "(lift 0)" \
+  "    head = atomic_load(&ch->head);"
+
+# 35) Stack object checks should use uintptr_t helper
+output_expect_contains "StackObjUsesUintptr" \
+  "(lift 0)" \
+  "uintptr_t"
+
+output_expect_contains "StackObjHasHelper" \
+  "(lift 0)" \
+  "is_stack_obj"
+
+# 36) Codegen literal emission unit tests
+unit_test_expect_success "CodegenLiteralExpr" \
+  "tests/unit_codegen_literals.c" \
+  "src/codegen/codegen.c" \
+  "src/types.c" \
+  "src/util/dstring.c"
+
+# 37) Field-aware scanner should skip weak fields
+unit_test_expect_success "FieldAwareScannerSkipsWeak" \
+  "tests/unit_codegen_scanner.c" \
+  "src/codegen/codegen.c" \
+  "src/types.c" \
+  "src/util/dstring.c"
+
 exit $FAIL

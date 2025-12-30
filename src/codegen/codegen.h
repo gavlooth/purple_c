@@ -10,6 +10,7 @@
 // Emit C code for a value
 Value* emit_c_call(const char* fn, Value* a, Value* b);
 Value* lift_value(Value* v);
+char* val_to_c_expr(Value* v);
 
 // ASAP scanner generation
 void gen_asap_scanner(const char* type_name, int is_list);

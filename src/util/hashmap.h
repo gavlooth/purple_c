@@ -18,6 +18,7 @@ typedef struct HashMap {
     size_t bucket_count;
     size_t entry_count;
     float load_factor;
+    int had_alloc_failure;
 } HashMap;
 
 // Create/destroy
@@ -39,5 +40,6 @@ void hashmap_foreach(HashMap* map, HashMapIterFn fn, void* ctx);
 // Utility
 size_t hashmap_size(HashMap* map);
 void hashmap_clear(HashMap* map);
+int hashmap_had_alloc_failure(HashMap* map);
 
 #endif // PURPLE_HASHMAP_H
