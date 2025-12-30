@@ -399,6 +399,105 @@ run_test "Phase11-ConcFreeze" \
     "(lift 0)" \
     "void conc_freeze"
 
+# =============================================================================
+# LANGUAGE PRIMITIVES
+# =============================================================================
+
+# 65. Multiplication
+run_test "Prim-Mul" \
+    "(* 6 7)" \
+    "Result: 42"
+
+# 66. Division
+run_test "Prim-Div" \
+    "(/ 42 6)" \
+    "Result: 7"
+
+# 67. Modulo
+run_test "Prim-Mod" \
+    "(% 17 5)" \
+    "Result: 2"
+
+# 68. Equality
+run_test "Prim-Eq" \
+    "(= 5 5)" \
+    "Result: t"
+
+# 69. Less than
+run_test "Prim-Lt" \
+    "(< 3 5)" \
+    "Result: t"
+
+# 70. Greater than
+run_test "Prim-Gt" \
+    "(> 5 3)" \
+    "Result: t"
+
+# 71. Less or equal
+run_test "Prim-Le" \
+    "(<= 5 5)" \
+    "Result: t"
+
+# 72. Greater or equal
+run_test "Prim-Ge" \
+    "(>= 5 5)" \
+    "Result: t"
+
+# 73. Logical and
+run_test "Prim-And" \
+    "(and t t)" \
+    "Result: t"
+
+# 74. Logical or
+run_test "Prim-Or" \
+    "(or nil t)" \
+    "Result: t"
+
+# 75. Logical not
+run_test "Prim-Not" \
+    "(not nil)" \
+    "Result: t"
+
+# 76. car
+run_test "Prim-Car" \
+    "(car (cons 1 2))" \
+    "Result: 1"
+
+# 77. cdr
+run_test "Prim-Cdr" \
+    "(cdr (cons 1 2))" \
+    "Result: 2"
+
+# 78. fst (alias for car)
+run_test "Prim-Fst" \
+    "(fst (cons 3 4))" \
+    "Result: 3"
+
+# 79. snd (alias for cdr)
+run_test "Prim-Snd" \
+    "(snd (cons 3 4))" \
+    "Result: 4"
+
+# 80. null?
+run_test "Prim-Null" \
+    "(null? nil)" \
+    "Result: t"
+
+# 81. letrec (factorial)
+run_test "Prim-Letrec" \
+    "(letrec ((fact (lambda (n) (if (= n 0) 1 (* n (fact (- n 1))))))) (fact 5))" \
+    "Result: 120"
+
+# 82. Short-circuit and (false case)
+run_test "Prim-AndShort" \
+    "(and nil t)" \
+    "Result: ()"
+
+# 83. Short-circuit or (first true)
+run_test "Prim-OrShort" \
+    "(or t nil)" \
+    "Result: t"
+
 if [ $FAIL -eq 0 ]; then
     echo "All tests passed!"
     exit 0

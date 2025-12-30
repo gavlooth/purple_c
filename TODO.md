@@ -183,7 +183,7 @@
 
 ## Test Status
 
-All 64 tests passing:
+All 83 tests passing:
 - 13 original ASAP tests
 - 8 optimization tests (Phases 2-5)
 - 4 Phase 6b tests (ISMM 2024 SCC-based RC)
@@ -192,6 +192,7 @@ All 64 tests passing:
 - 7 Phase 9 tests (DPS)
 - 10 Phase 10 tests (Exception Handling)
 - 10 Phase 11 tests (Concurrency)
+- 19 Language Primitive tests
 - 2 integration tests
 
 ---
@@ -270,10 +271,60 @@ Mutable cycles that never freeze are handled by deferred RC fallback:
 | `src/eval/eval.h/c` | Evaluator & handlers |
 | `src/parser/parser.h/c` | Reader/parser |
 | `main.c` | Legacy monolithic implementation |
-| `tests.sh` | Test suite (64 tests) |
+| `tests.sh` | Test suite (83 tests) |
 | `Makefile` | Build system for modular structure |
 | `IMPLEMENTATION_PLAN.md` | Detailed implementation plan with pseudocode |
 | `CLAUDE.md` | Documentation of ASAP principles |
+
+---
+
+## Language Primitives
+
+### Arithmetic
+| Primitive | Description |
+|-----------|-------------|
+| `+` | Addition |
+| `-` | Subtraction |
+| `*` | Multiplication |
+| `/` | Division |
+| `%` | Modulo |
+
+### Comparison
+| Primitive | Description |
+|-----------|-------------|
+| `=` | Equality |
+| `<` | Less than |
+| `>` | Greater than |
+| `<=` | Less or equal |
+| `>=` | Greater or equal |
+
+### Logical
+| Primitive | Description |
+|-----------|-------------|
+| `and` | Short-circuit AND |
+| `or` | Short-circuit OR |
+| `not` | Logical NOT |
+
+### List Operations
+| Primitive | Description |
+|-----------|-------------|
+| `cons` | Construct pair |
+| `car` / `fst` | First element |
+| `cdr` / `snd` | Second element |
+| `null?` | Test for nil |
+
+### Special Forms
+| Form | Description |
+|------|-------------|
+| `quote` | Return unevaluated |
+| `if` | Conditional |
+| `let` | Variable binding |
+| `letrec` | Recursive binding |
+| `lambda` | Function abstraction |
+| `lift` | Stage to code level |
+| `run` | Execute code |
+| `EM` | Evaluate in parent meta-env |
+| `scan` | ASAP mark traversal |
 
 ---
 

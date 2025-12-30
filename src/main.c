@@ -39,9 +39,37 @@ int main(int argc, char** argv) {
 
     // Initial environment with primitives
     Value* env = NIL;
+
+    // Constants
+    env = env_extend(env, mk_sym("t"), SYM_T);
+    env = env_extend(env, mk_sym("nil"), NIL);
+
+    // Arithmetic
     env = env_extend(env, mk_sym("+"), mk_prim(prim_add));
     env = env_extend(env, mk_sym("-"), mk_prim(prim_sub));
+    env = env_extend(env, mk_sym("*"), mk_prim(prim_mul));
+    env = env_extend(env, mk_sym("/"), mk_prim(prim_div));
+    env = env_extend(env, mk_sym("%"), mk_prim(prim_mod));
+
+    // Comparison
+    env = env_extend(env, mk_sym("="), mk_prim(prim_eq));
+    env = env_extend(env, mk_sym("<"), mk_prim(prim_lt));
+    env = env_extend(env, mk_sym(">"), mk_prim(prim_gt));
+    env = env_extend(env, mk_sym("<="), mk_prim(prim_le));
+    env = env_extend(env, mk_sym(">="), mk_prim(prim_ge));
+
+    // Logical
+    env = env_extend(env, mk_sym("not"), mk_prim(prim_not));
+
+    // List operations
     env = env_extend(env, mk_sym("cons"), mk_prim(prim_cons));
+    env = env_extend(env, mk_sym("car"), mk_prim(prim_car));
+    env = env_extend(env, mk_sym("cdr"), mk_prim(prim_cdr));
+    env = env_extend(env, mk_sym("fst"), mk_prim(prim_fst));
+    env = env_extend(env, mk_sym("snd"), mk_prim(prim_snd));
+    env = env_extend(env, mk_sym("null?"), mk_prim(prim_null));
+
+    // Other
     env = env_extend(env, mk_sym("run"), mk_prim(prim_run));
 
     // Initial Meta-Environment (Level 0)
@@ -79,7 +107,23 @@ int main(int argc, char** argv) {
 
     printf("\n// Runtime arithmetic functions\n");
     printf("Obj* add(Obj* a, Obj* b) { return mk_int(a->i + b->i); }\n");
-    printf("Obj* sub(Obj* a, Obj* b) { return mk_int(a->i - b->i); }\n\n");
+    printf("Obj* sub(Obj* a, Obj* b) { return mk_int(a->i - b->i); }\n");
+    printf("Obj* mul(Obj* a, Obj* b) { return mk_int(a->i * b->i); }\n");
+    printf("Obj* div_op(Obj* a, Obj* b) { return mk_int(b->i ? a->i / b->i : 0); }\n");
+    printf("Obj* mod_op(Obj* a, Obj* b) { return mk_int(b->i ? a->i %% b->i : 0); }\n\n");
+
+    printf("// Runtime comparison functions\n");
+    printf("Obj* eq_op(Obj* a, Obj* b) { return mk_int(a->i == b->i); }\n");
+    printf("Obj* lt_op(Obj* a, Obj* b) { return mk_int(a->i < b->i); }\n");
+    printf("Obj* gt_op(Obj* a, Obj* b) { return mk_int(a->i > b->i); }\n");
+    printf("Obj* le_op(Obj* a, Obj* b) { return mk_int(a->i <= b->i); }\n");
+    printf("Obj* ge_op(Obj* a, Obj* b) { return mk_int(a->i >= b->i); }\n\n");
+
+    printf("// Runtime logical functions\n");
+    printf("Obj* not_op(Obj* a, Obj* unused) { (void)unused; return mk_int(!a->i); }\n\n");
+
+    printf("// Runtime list functions\n");
+    printf("int is_nil(Obj* x) { return x == NULL; }\n\n");
 
     printf("int main() {\n");
 

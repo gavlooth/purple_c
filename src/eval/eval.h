@@ -38,9 +38,32 @@ Value* h_if_default(Value* exp, Value* menv);
 
 // -- Primitives --
 
+// Arithmetic
 Value* prim_add(Value* args, Value* menv);
 Value* prim_sub(Value* args, Value* menv);
+Value* prim_mul(Value* args, Value* menv);
+Value* prim_div(Value* args, Value* menv);
+Value* prim_mod(Value* args, Value* menv);
+
+// Comparison
+Value* prim_eq(Value* args, Value* menv);
+Value* prim_lt(Value* args, Value* menv);
+Value* prim_gt(Value* args, Value* menv);
+Value* prim_le(Value* args, Value* menv);
+Value* prim_ge(Value* args, Value* menv);
+
+// Logical
+Value* prim_not(Value* args, Value* menv);
+
+// List operations
 Value* prim_cons(Value* args, Value* menv);
+Value* prim_car(Value* args, Value* menv);
+Value* prim_cdr(Value* args, Value* menv);
+Value* prim_fst(Value* args, Value* menv);
+Value* prim_snd(Value* args, Value* menv);
+Value* prim_null(Value* args, Value* menv);
+
+// Other
 Value* prim_run(Value* args, Value* menv);
 
 // -- Symbol Table --
@@ -51,6 +74,9 @@ extern Value* SYM_QUOTE;
 extern Value* SYM_IF;
 extern Value* SYM_LAMBDA;
 extern Value* SYM_LET;
+extern Value* SYM_LETREC;
+extern Value* SYM_AND;
+extern Value* SYM_OR;
 extern Value* SYM_LIFT;
 extern Value* SYM_RUN;
 extern Value* SYM_EM;

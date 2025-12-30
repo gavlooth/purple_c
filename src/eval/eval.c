@@ -13,6 +13,9 @@ Value* SYM_QUOTE = NULL;
 Value* SYM_IF = NULL;
 Value* SYM_LAMBDA = NULL;
 Value* SYM_LET = NULL;
+Value* SYM_LETREC = NULL;
+Value* SYM_AND = NULL;
+Value* SYM_OR = NULL;
 Value* SYM_LIFT = NULL;
 Value* SYM_RUN = NULL;
 Value* SYM_EM = NULL;
@@ -27,6 +30,9 @@ void init_syms(void) {
     SYM_IF = mk_sym("if");
     SYM_LAMBDA = mk_sym("lambda");
     SYM_LET = mk_sym("let");
+    SYM_LETREC = mk_sym("letrec");
+    SYM_AND = mk_sym("and");
+    SYM_OR = mk_sym("or");
     SYM_LIFT = mk_sym("lift");
     SYM_RUN = mk_sym("run");
     SYM_EM = mk_sym("EM");
@@ -325,6 +331,106 @@ Value* eval(Value* expr, Value* menv) {
         if (sym_eq(op, SYM_IF)) return menv->menv.h_if(expr, menv);
         if (sym_eq(op, SYM_LET)) return menv->menv.h_let(expr, menv);
 
+        // letrec - recursive let binding
+        if (sym_eq(op, SYM_LETREC)) {
+            Value* bindings = car(args);
+            Value* body = car(cdr(args));
+
+            // First pass: extend env with placeholders
+            Value* new_env = menv->menv.env;
+            Value* b = bindings;
+            while (!is_nil(b)) {
+                Value* bind = car(b);
+                Value* sym = car(bind);
+                new_env = env_extend(new_env, sym, NIL);  // Placeholder
+                b = cdr(b);
+            }
+
+            // Create new menv for evaluating bindings
+            Value* rec_menv = mk_menv(menv->menv.parent, new_env);
+            rec_menv->menv.h_app = menv->menv.h_app;
+            rec_menv->menv.h_let = menv->menv.h_let;
+            rec_menv->menv.h_if = menv->menv.h_if;
+
+            // Second pass: evaluate and update bindings
+            b = bindings;
+            Value* env_ptr = new_env;
+            while (!is_nil(b)) {
+                Value* bind = car(b);
+                Value* val_expr = car(cdr(bind));
+                Value* val = eval(val_expr, rec_menv);
+
+                // Update the placeholder in environment
+                // Find and update the binding
+                Value* e = new_env;
+                Value* sym = car(bind);
+                while (!is_nil(e)) {
+                    Value* pair = car(e);
+                    if (sym_eq(car(pair), sym)) {
+                        pair->cell.cdr = val;
+                        break;
+                    }
+                    e = cdr(e);
+                }
+                b = cdr(b);
+            }
+
+            return eval(body, rec_menv);
+        }
+
+        // Short-circuit and
+        if (sym_eq(op, SYM_AND)) {
+            Value* rest = args;
+            Value* result = SYM_T;
+            while (!is_nil(rest)) {
+                result = eval(car(rest), menv);
+                if (is_code(result)) {
+                    // At code level, generate && chain
+                    Value* remaining = cdr(rest);
+                    while (!is_nil(remaining)) {
+                        Value* next = eval(car(remaining), menv);
+                        char buf[1024];
+                        char* sr = result->s;
+                        char* sn = is_code(next) ? next->s : val_to_str(next);
+                        sprintf(buf, "(%s && %s)", sr, sn);
+                        if (!is_code(next)) free(sn);
+                        result = mk_code(buf);
+                        remaining = cdr(remaining);
+                    }
+                    return result;
+                }
+                if (is_nil(result)) return NIL;
+                rest = cdr(rest);
+            }
+            return result;
+        }
+
+        // Short-circuit or
+        if (sym_eq(op, SYM_OR)) {
+            Value* rest = args;
+            while (!is_nil(rest)) {
+                Value* result = eval(car(rest), menv);
+                if (is_code(result)) {
+                    // At code level, generate || chain
+                    Value* remaining = cdr(rest);
+                    while (!is_nil(remaining)) {
+                        Value* next = eval(car(remaining), menv);
+                        char buf[1024];
+                        char* sr = result->s;
+                        char* sn = is_code(next) ? next->s : val_to_str(next);
+                        sprintf(buf, "(%s || %s)", sr, sn);
+                        if (!is_code(next)) free(sn);
+                        result = mk_code(buf);
+                        remaining = cdr(remaining);
+                    }
+                    return result;
+                }
+                if (!is_nil(result)) return result;
+                rest = cdr(rest);
+            }
+            return NIL;
+        }
+
         if (sym_eq(op, SYM_LAMBDA)) {
             Value* params = car(args);
             Value* body = car(cdr(args));
@@ -391,4 +497,149 @@ Value* prim_cons(Value* args, Value* menv) {
 
 Value* prim_run(Value* args, Value* menv) {
     return eval(car(args), menv);
+}
+
+// -- Additional Arithmetic Primitives --
+
+Value* prim_mul(Value* args, Value* menv) {
+    (void)menv;
+    Value* a = car(args);
+    Value* b = car(cdr(args));
+    if (is_code(a) || is_code(b)) return emit_c_call("mul", a, b);
+    return mk_int(a->i * b->i);
+}
+
+Value* prim_div(Value* args, Value* menv) {
+    (void)menv;
+    Value* a = car(args);
+    Value* b = car(cdr(args));
+    if (is_code(a) || is_code(b)) return emit_c_call("div_op", a, b);
+    if (b->i == 0) {
+        printf("Error: Division by zero\n");
+        return mk_int(0);
+    }
+    return mk_int(a->i / b->i);
+}
+
+Value* prim_mod(Value* args, Value* menv) {
+    (void)menv;
+    Value* a = car(args);
+    Value* b = car(cdr(args));
+    if (is_code(a) || is_code(b)) return emit_c_call("mod_op", a, b);
+    if (b->i == 0) {
+        printf("Error: Modulo by zero\n");
+        return mk_int(0);
+    }
+    return mk_int(a->i % b->i);
+}
+
+// -- Comparison Primitives --
+
+Value* prim_eq(Value* args, Value* menv) {
+    (void)menv;
+    Value* a = car(args);
+    Value* b = car(cdr(args));
+    if (is_code(a) || is_code(b)) return emit_c_call("eq_op", a, b);
+    // Handle different types
+    if (a->tag == T_INT && b->tag == T_INT) {
+        return a->i == b->i ? SYM_T : NIL;
+    }
+    if (a->tag == T_SYM && b->tag == T_SYM) {
+        return sym_eq(a, b) ? SYM_T : NIL;
+    }
+    if (a->tag == T_NIL && b->tag == T_NIL) return SYM_T;
+    return NIL;
+}
+
+Value* prim_lt(Value* args, Value* menv) {
+    (void)menv;
+    Value* a = car(args);
+    Value* b = car(cdr(args));
+    if (is_code(a) || is_code(b)) return emit_c_call("lt_op", a, b);
+    return a->i < b->i ? SYM_T : NIL;
+}
+
+Value* prim_gt(Value* args, Value* menv) {
+    (void)menv;
+    Value* a = car(args);
+    Value* b = car(cdr(args));
+    if (is_code(a) || is_code(b)) return emit_c_call("gt_op", a, b);
+    return a->i > b->i ? SYM_T : NIL;
+}
+
+Value* prim_le(Value* args, Value* menv) {
+    (void)menv;
+    Value* a = car(args);
+    Value* b = car(cdr(args));
+    if (is_code(a) || is_code(b)) return emit_c_call("le_op", a, b);
+    return a->i <= b->i ? SYM_T : NIL;
+}
+
+Value* prim_ge(Value* args, Value* menv) {
+    (void)menv;
+    Value* a = car(args);
+    Value* b = car(cdr(args));
+    if (is_code(a) || is_code(b)) return emit_c_call("ge_op", a, b);
+    return a->i >= b->i ? SYM_T : NIL;
+}
+
+// -- Logical Primitives --
+
+Value* prim_not(Value* args, Value* menv) {
+    (void)menv;
+    Value* a = car(args);
+    if (is_code(a)) return emit_c_call("not_op", a, NIL);
+    return is_nil(a) ? SYM_T : NIL;
+}
+
+// -- List Primitives --
+
+Value* prim_car(Value* args, Value* menv) {
+    (void)menv;
+    Value* a = car(args);
+    if (is_code(a)) {
+        char buf[512];
+        sprintf(buf, "(%s)->a", a->s);
+        return mk_code(buf);
+    }
+    if (a->tag != T_CELL) {
+        printf("Error: car expects pair\n");
+        return NIL;
+    }
+    return car(a);
+}
+
+Value* prim_cdr(Value* args, Value* menv) {
+    (void)menv;
+    Value* a = car(args);
+    if (is_code(a)) {
+        char buf[512];
+        sprintf(buf, "(%s)->b", a->s);
+        return mk_code(buf);
+    }
+    if (a->tag != T_CELL) {
+        printf("Error: cdr expects pair\n");
+        return NIL;
+    }
+    return cdr(a);
+}
+
+// fst and snd are aliases for car and cdr
+Value* prim_fst(Value* args, Value* menv) {
+    return prim_car(args, menv);
+}
+
+Value* prim_snd(Value* args, Value* menv) {
+    return prim_cdr(args, menv);
+}
+
+Value* prim_null(Value* args, Value* menv) {
+    (void)menv;
+    Value* a = car(args);
+    if (is_code(a)) {
+        char buf[512];
+        sprintf(buf, "is_nil(%s)", a->s);
+        return mk_code(buf);
+    }
+    return is_nil(a) ? SYM_T : NIL;
 }
