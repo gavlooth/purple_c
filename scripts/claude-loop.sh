@@ -6,7 +6,19 @@ cd "$ROOT"
 
 PROMPT_FILE="${PROMPT_FILE:-scripts/claude-loop.prompt}"
 BMAD_AGENT_FILE="${BMAD_AGENT_FILE:-}"
-MODEL="${MODEL:-opus}"
+MODEL_ENV="${MODEL:-}"
+MODEL="${CLAUDE_MODEL:-}"
+if [[ -z "$MODEL" ]]; then
+  if [[ -n "$MODEL_ENV" && "$MODEL_ENV" != *"/"* && "$MODEL_ENV" != *".xml" ]]; then
+    MODEL="$MODEL_ENV"
+  else
+    MODEL="opus"
+  fi
+fi
+if [[ "$MODEL" == *"/"* || "$MODEL" == *".xml" ]]; then
+  echo "Invalid model '$MODEL'; falling back to 'opus'. Set CLAUDE_MODEL to override." >&2
+  MODEL="opus"
+fi
 MAX_ITERS="${MAX_ITERS:-25}"
 PERMISSION_MODE="${PERMISSION_MODE:-acceptEdits}"
 ALLOWED_TOOLS="${ALLOWED_TOOLS:-Bash(git:*) Bash(rg:*) Bash(ls:*) Bash(cat:*) Bash(sed:*) Bash(awk:*) Bash(grep:*) Bash(make:*) Bash(./tests.sh:*) Edit Read}"
@@ -47,6 +59,7 @@ while true; do
 
   echo "=== Claude loop iteration $iter ==="
 
+  set +e
   output=$(claude -p \
     --model "$MODEL" \
     --permission-mode "$PERMISSION_MODE" \
@@ -55,6 +68,14 @@ while true; do
     --no-session-persistence \
     "${budget_args[@]}" \
     "Find and fix one issue in this repo.")
+  status=$?
+  set -e
+
+  if [[ $status -ne 0 ]]; then
+    printf '%s\n' "$output" >&2
+    echo "Claude CLI failed (exit $status)." >&2
+    exit $status
+  fi
 
   printf '%s\n' "$output"
 
