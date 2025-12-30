@@ -62,6 +62,7 @@ clean:
 # Run test suite
 test: all
 	./tests.sh
+	./tests_break.sh
 
 # Generate and compile output
 compile-output: all

@@ -11,6 +11,7 @@
 typedef struct Obj {
     int mark;           // Reference count / mark bit
     int scc_id;         // SCC identifier (-1 if not in SCC)
+    int is_pair;        // 1 if pair, 0 if int
     union {
         long i;
         struct { struct Obj *a, *b; };
@@ -23,7 +24,8 @@ typedef struct SCCNode {
     int lowlink;
     int on_stack;
     Obj* obj;
-    struct SCCNode* next;
+    struct SCCNode* next;        // For node_map linked list
+    struct SCCNode* stack_next;  // For stack linked list (separate from node_map)
 } SCCNode;
 
 // Strongly Connected Component

@@ -155,6 +155,15 @@ void gen_deferred_runtime(void) {
     printf("        process_deferred_batch(DEFERRED_BATCH_SIZE);\n");
     printf("    }\n");
     printf("}\n\n");
+
+    printf("// Deferred release for cyclic structures\n");
+    printf("void deferred_release(Obj* obj) {\n");
+    printf("    if (!obj) return;\n");
+    printf("    // For cyclic structures, use deferred decrement\n");
+    printf("    defer_dec(obj);\n");
+    printf("    // Process if threshold reached\n");
+    printf("    safe_point();\n");
+    printf("}\n\n");
 }
 
 void gen_safe_point(const char* location) {

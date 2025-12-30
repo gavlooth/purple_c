@@ -90,12 +90,13 @@ static SCCNode* get_or_create_node(SCCRegistry* reg, Obj* obj) {
     n->on_stack = 0;
     n->obj = obj;
     n->next = reg->node_map;
+    n->stack_next = NULL;
     reg->node_map = n;
     return n;
 }
 
 static void push_stack(SCCRegistry* reg, SCCNode* node) {
-    node->next = reg->stack;
+    node->stack_next = reg->stack;
     reg->stack = node;
     node->on_stack = 1;
 }
@@ -103,7 +104,7 @@ static void push_stack(SCCRegistry* reg, SCCNode* node) {
 static SCCNode* pop_stack(SCCRegistry* reg) {
     if (!reg->stack) return NULL;
     SCCNode* node = reg->stack;
-    reg->stack = node->next;
+    reg->stack = node->stack_next;
     node->on_stack = 0;
     return node;
 }
@@ -249,6 +250,7 @@ void gen_scc_runtime(void) {
     printf("    Obj** members;\n");
     printf("    int member_count;\n");
     printf("    int ref_count;\n");
+    printf("    struct SCC* next;\n");
     printf("} SCC;\n\n");
 
     printf("SCC* SCC_REGISTRY[1024];\n");
@@ -348,7 +350,7 @@ void gen_scc_runtime(void) {
     printf("    SCC* s = sccs;\n");
     printf("    while (s) {\n");
     printf("        SCC_REGISTRY[SCC_COUNT++] = s;\n");
-    printf("        s = (SCC*)((char*)s + sizeof(SCC)); // simplified\n");
+    printf("        s = s->next;\n");
     printf("    }\n");
     printf("    \n");
     printf("    return sccs;\n");

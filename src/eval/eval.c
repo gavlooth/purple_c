@@ -300,7 +300,7 @@ Value* h_if_default(Value* exp, Value* menv) {
         char buf[2048];
         char* st = (t->tag == T_CODE) ? t->s : val_to_str(t);
         char* se = (e->tag == T_CODE) ? e->s : val_to_str(e);
-        sprintf(buf, "(if %s %s %s)", c->s, st, se);
+        sprintf(buf, "((%s)->i ? (%s) : (%s))", c->s, st, se);
         if (t->tag != T_CODE) free(st);
         if (e->tag != T_CODE) free(se);
         return mk_code(buf);
