@@ -1,0 +1,270 @@
+        -:    0:Source:src/analysis/shape.c
+        -:    1:#include "shape.h"
+        -:    2:
+        -:    3:// Shape lattice: TREE < DAG < CYCLIC (join = max)
+        9:    4:Shape shape_join(Shape a, Shape b) {
+       9*:    5:    if (a == SHAPE_CYCLIC || b == SHAPE_CYCLIC) return SHAPE_CYCLIC;
+       9*:    6:    if (a == SHAPE_DAG || b == SHAPE_DAG) return SHAPE_DAG;
+        9:    7:    if (a == SHAPE_TREE || b == SHAPE_TREE) return SHAPE_TREE;
+        3:    8:    return SHAPE_UNKNOWN;
+        -:    9:}
+        -:   10:
+    #####:   11:const char* shape_to_string(Shape s) {
+    #####:   12:    switch (s) {
+    #####:   13:        case SHAPE_TREE: return "TREE";
+    #####:   14:        case SHAPE_DAG: return "DAG";
+    #####:   15:        case SHAPE_CYCLIC: return "CYCLIC";
+    #####:   16:        default: return "UNKNOWN";
+        -:   17:    }
+        -:   18:}
+        -:   19:
+        5:   20:ShapeContext* mk_shape_context(void) {
+        5:   21:    ShapeContext* ctx = malloc(sizeof(ShapeContext));
+       5*:   22:    if (!ctx) return NULL;
+        5:   23:    ctx->shapes = NULL;
+        5:   24:    ctx->changed = 0;
+        5:   25:    ctx->next_alias_group = 1;
+        5:   26:    ctx->result_shape = SHAPE_UNKNOWN;
+        5:   27:    return ctx;
+        -:   28:}
+        -:   29:
+       22:   30:ShapeInfo* find_shape(ShapeContext* ctx, const char* name) {
+      22*:   31:    if (!ctx) return NULL;
+       22:   32:    ShapeInfo* s = ctx->shapes;
+       29:   33:    while (s) {
+       20:   34:        if (strcmp(s->var_name, name) == 0) return s;
+        7:   35:        s = s->next;
+        -:   36:    }
+        9:   37:    return NULL;
+        -:   38:}
+        -:   39:
+        6:   40:void add_shape(ShapeContext* ctx, const char* name, Shape shape) {
+       6*:   41:    if (!ctx) return;
+        6:   42:    ShapeInfo* existing = find_shape(ctx, name);
+        6:   43:    if (existing) {
+    #####:   44:        Shape joined = shape_join(existing->shape, shape);
+    #####:   45:        if (joined != existing->shape) {
+    #####:   46:            existing->shape = joined;
+    #####:   47:            ctx->changed = 1;
+        -:   48:        }
+    #####:   49:        return;
+        -:   50:    }
+        6:   51:    ShapeInfo* s = malloc(sizeof(ShapeInfo));
+       6*:   52:    if (!s) return;
+        6:   53:    s->var_name = strdup(name);
+        6:   54:    if (!s->var_name) {
+    #####:   55:        free(s);
+    #####:   56:        return;
+        -:   57:    }
+        6:   58:    s->shape = shape;
+        6:   59:    s->confidence = 100;
+        6:   60:    s->alias_group = ctx->next_alias_group++;
+        6:   61:    s->next = ctx->shapes;
+        6:   62:    ctx->shapes = s;
+        -:   63:}
+        -:   64:
+    #####:   65:Shape lookup_shape(ShapeContext* ctx, Value* expr) {
+    #####:   66:    if (!ctx || !expr) return SHAPE_UNKNOWN;
+    #####:   67:    if (expr->tag == T_SYM) {
+    #####:   68:        ShapeInfo* s = find_shape(ctx, expr->s);
+    #####:   69:        return s ? s->shape : SHAPE_UNKNOWN;
+        -:   70:    }
+        -:   71:    // Literals are always TREE (no sharing)
+    #####:   72:    if (expr->tag == T_INT || expr->tag == T_NIL) {
+    #####:   73:        return SHAPE_TREE;
+        -:   74:    }
+    #####:   75:    return SHAPE_UNKNOWN;
+        -:   76:}
+        -:   77:
+    #####:   78:int may_alias(ShapeContext* ctx, Value* a, Value* b) {
+    #####:   79:    if (!a || !b) return 0;
+        -:   80:    // Same variable definitely aliases
+    #####:   81:    if (a->tag == T_SYM && b->tag == T_SYM && strcmp(a->s, b->s) == 0) {
+    #####:   82:        return 1;
+        -:   83:    }
+        -:   84:    // Different literals never alias
+    #####:   85:    if ((a->tag == T_INT || a->tag == T_NIL) &&
+    #####:   86:        (b->tag == T_INT || b->tag == T_NIL)) {
+    #####:   87:        return 0;
+        -:   88:    }
+        -:   89:    // Check alias groups if both are variables
+    #####:   90:    if (a->tag == T_SYM && b->tag == T_SYM) {
+    #####:   91:        ShapeInfo* sa = find_shape(ctx, a->s);
+    #####:   92:        ShapeInfo* sb = find_shape(ctx, b->s);
+    #####:   93:        if (sa && sb && sa->alias_group == sb->alias_group) {
+    #####:   94:            return 1;
+        -:   95:        }
+        -:   96:    }
+        -:   97:    // Conservative: assume may alias
+    #####:   98:    return 1;
+        -:   99:}
+        -:  100:
+       31:  101:void analyze_shapes_expr(Value* expr, ShapeContext* ctx) {
+       31:  102:    if (!expr || !ctx || is_nil(expr)) {
+    #####:  103:        ctx->result_shape = SHAPE_TREE;
+    #####:  104:        return;
+        -:  105:    }
+        -:  106:
+       31:  107:    switch (expr->tag) {
+        6:  108:        case T_INT:
+        -:  109:        case T_NIL:
+        6:  110:            ctx->result_shape = SHAPE_TREE;
+        6:  111:            break;
+        -:  112:
+       10:  113:        case T_SYM: {
+       10:  114:            ShapeInfo* s = find_shape(ctx, expr->s);
+       10:  115:            ctx->result_shape = s ? s->shape : SHAPE_UNKNOWN;
+       10:  116:            break;
+        -:  117:        }
+        -:  118:
+       15:  119:        case T_CELL: {
+       15:  120:            Value* op = car(expr);
+       15:  121:            Value* args = cdr(expr);
+        -:  122:
+       15:  123:            if (op->tag == T_SYM) {
+        -:  124:                // CONS creates tree structure (unless aliased args)
+       15:  125:                if (strcmp(op->s, "cons") == 0) {
+    #####:  126:                    Value* car_arg = car(args);
+    #####:  127:                    Value* cdr_arg = car(cdr(args));
+        -:  128:
+    #####:  129:                    analyze_shapes_expr(car_arg, ctx);
+    #####:  130:                    Shape car_shape = ctx->result_shape;
+        -:  131:
+    #####:  132:                    analyze_shapes_expr(cdr_arg, ctx);
+    #####:  133:                    Shape cdr_shape = ctx->result_shape;
+        -:  134:
+    #####:  135:                    if (car_shape == SHAPE_TREE && cdr_shape == SHAPE_TREE) {
+    #####:  136:                        if (!may_alias(ctx, car_arg, cdr_arg)) {
+    #####:  137:                            ctx->result_shape = SHAPE_TREE;
+        -:  138:                        } else {
+    #####:  139:                            ctx->result_shape = SHAPE_DAG;
+        -:  140:                        }
+        -:  141:                    } else {
+    #####:  142:                        ctx->result_shape = shape_join(car_shape, cdr_shape);
+    #####:  143:                        if (ctx->result_shape == SHAPE_TREE) {
+    #####:  144:                            ctx->result_shape = SHAPE_DAG;
+        -:  145:                        }
+        -:  146:                    }
+    #####:  147:                    return;
+        -:  148:                }
+        -:  149:
+        -:  150:                // LET binding
+       15:  151:                if (strcmp(op->s, "let") == 0) {
+        5:  152:                    Value* bindings = car(args);
+        5:  153:                    Value* body = car(cdr(args));
+        -:  154:
+       11:  155:                    while (!is_nil(bindings)) {
+        6:  156:                        Value* bind = car(bindings);
+        6:  157:                        Value* sym = car(bind);
+        6:  158:                        Value* val_expr = car(cdr(bind));
+        -:  159:
+        6:  160:                        analyze_shapes_expr(val_expr, ctx);
+        6:  161:                        add_shape(ctx, sym->s, ctx->result_shape);
+        -:  162:
+        6:  163:                        bindings = cdr(bindings);
+        -:  164:                    }
+        -:  165:
+        5:  166:                    analyze_shapes_expr(body, ctx);
+        5:  167:                    return;
+        -:  168:                }
+        -:  169:
+        -:  170:                // LETREC binding (potentially cyclic)
+       10:  171:                if (strcmp(op->s, "letrec") == 0) {
+    #####:  172:                    Value* bindings = car(args);
+    #####:  173:                    Value* body = car(cdr(args));
+        -:  174:
+        -:  175:                    // Pre-mark all bound symbols as cyclic
+    #####:  176:                    Value* b = bindings;
+    #####:  177:                    while (!is_nil(b)) {
+    #####:  178:                        Value* bind = car(b);
+    #####:  179:                        Value* sym = car(bind);
+    #####:  180:                        add_shape(ctx, sym->s, SHAPE_CYCLIC);
+    #####:  181:                        b = cdr(b);
+        -:  182:                    }
+        -:  183:
+        -:  184:                    // Analyze binding expressions (will join with CYCLIC)
+    #####:  185:                    b = bindings;
+    #####:  186:                    while (!is_nil(b)) {
+    #####:  187:                        Value* bind = car(b);
+    #####:  188:                        Value* sym = car(bind);
+    #####:  189:                        Value* val_expr = car(cdr(bind));
+        -:  190:
+    #####:  191:                        analyze_shapes_expr(val_expr, ctx);
+    #####:  192:                        add_shape(ctx, sym->s, ctx->result_shape);
+        -:  193:
+    #####:  194:                        b = cdr(b);
+        -:  195:                    }
+        -:  196:
+    #####:  197:                    analyze_shapes_expr(body, ctx);
+    #####:  198:                    return;
+        -:  199:                }
+        -:  200:
+        -:  201:                // SET! can create cycles
+       10:  202:                if (strcmp(op->s, "set!") == 0) {
+    #####:  203:                    Value* target = car(args);
+    #####:  204:                    if (target->tag == T_SYM) {
+    #####:  205:                        add_shape(ctx, target->s, SHAPE_CYCLIC);
+        -:  206:                    }
+    #####:  207:                    ctx->result_shape = SHAPE_CYCLIC;
+    #####:  208:                    return;
+        -:  209:                }
+        -:  210:
+        -:  211:                // IF - join both branches
+       10:  212:                if (strcmp(op->s, "if") == 0) {
+    #####:  213:                    Value* cond = car(args);
+    #####:  214:                    Value* then_br = car(cdr(args));
+    #####:  215:                    Value* else_br = car(cdr(cdr(args)));
+        -:  216:
+    #####:  217:                    analyze_shapes_expr(cond, ctx);
+    #####:  218:                    analyze_shapes_expr(then_br, ctx);
+    #####:  219:                    Shape then_shape = ctx->result_shape;
+    #####:  220:                    analyze_shapes_expr(else_br, ctx);
+    #####:  221:                    Shape else_shape = ctx->result_shape;
+        -:  222:
+    #####:  223:                    ctx->result_shape = shape_join(then_shape, else_shape);
+    #####:  224:                    return;
+        -:  225:                }
+        -:  226:
+        -:  227:                // LAMBDA - closure is TREE
+       10:  228:                if (strcmp(op->s, "lambda") == 0) {
+        1:  229:                    ctx->result_shape = SHAPE_TREE;
+        1:  230:                    return;
+        -:  231:                }
+        -:  232:
+        -:  233:                // LIFT - preserves shape
+        9:  234:                if (strcmp(op->s, "lift") == 0) {
+        6:  235:                    analyze_shapes_expr(car(args), ctx);
+        6:  236:                    return;
+        -:  237:                }
+        -:  238:            }
+        -:  239:
+        -:  240:            // Default: analyze all subexpressions and join their shapes
+        3:  241:            Shape result = SHAPE_UNKNOWN;
+        3:  242:            analyze_shapes_expr(op, ctx);
+        3:  243:            result = shape_join(result, ctx->result_shape);
+        9:  244:            while (!is_nil(args)) {
+        6:  245:                analyze_shapes_expr(car(args), ctx);
+        6:  246:                result = shape_join(result, ctx->result_shape);
+        6:  247:                args = cdr(args);
+        -:  248:            }
+        -:  249:            // Default to DAG if still unknown (conservative)
+       3*:  250:            ctx->result_shape = (result == SHAPE_UNKNOWN) ? SHAPE_DAG : result;
+        3:  251:            break;
+        -:  252:        }
+        -:  253:
+    #####:  254:        default:
+    #####:  255:            ctx->result_shape = SHAPE_UNKNOWN;
+    #####:  256:            break;
+        -:  257:    }
+        -:  258:}
+        -:  259:
+        6:  260:const char* shape_free_strategy(Shape s) {
+        6:  261:    switch (s) {
+        6:  262:        case SHAPE_TREE: return "free_tree";
+    #####:  263:        case SHAPE_DAG: return "dec_ref";
+    #####:  264:        case SHAPE_CYCLIC: return "deferred_release";
+        -:  265:        // SHAPE_UNKNOWN defaults to dec_ref (safe for both trees and DAGs)
+        -:  266:        // Using free_tree for unknown shapes risks infinite loops on cycles
+    #####:  267:        default: return "dec_ref";
+        -:  268:    }
+        -:  269:}

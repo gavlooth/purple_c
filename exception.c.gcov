@@ -1,0 +1,255 @@
+        -:    0:Source:src/memory/exception.c
+        -:    1:// Phase 10: Exception Handling Implementation
+        -:    2:// LLVM-style landing pads with ASAP cleanup
+        -:    3:
+        -:    4:#include "exception.h"
+        -:    5:#include <stdio.h>
+        -:    6:#include <stdlib.h>
+        -:    7:#include <string.h>
+        -:    8:
+        -:    9:static int next_pad_id = 0;
+        -:   10:
+        -:   11:// Track a new allocation
+    #####:   12:void track_alloc(ExceptionContext* ctx, const char* var, const char* type) {
+    #####:   13:    if (!ctx || !var || !type) return;
+        -:   14:
+    #####:   15:    LiveAlloc* alloc = malloc(sizeof(LiveAlloc));
+    #####:   16:    if (!alloc) return;
+    #####:   17:    alloc->var_name = strdup(var);
+    #####:   18:    alloc->type_name = strdup(type);
+    #####:   19:    if (!alloc->var_name || !alloc->type_name) {
+    #####:   20:        free(alloc->var_name);
+    #####:   21:        free(alloc->type_name);
+    #####:   22:        free(alloc);
+    #####:   23:        return;
+        -:   24:    }
+    #####:   25:    alloc->program_point = 0;  // Would be set by caller
+    #####:   26:    alloc->next = ctx->live_allocs;
+    #####:   27:    ctx->live_allocs = alloc;
+        -:   28:}
+        -:   29:
+        -:   30:// Remove allocation from tracking
+    #####:   31:void untrack_alloc(ExceptionContext* ctx, const char* var) {
+    #####:   32:    if (!ctx || !var) return;
+        -:   33:
+    #####:   34:    LiveAlloc** prev = &ctx->live_allocs;
+    #####:   35:    while (*prev) {
+    #####:   36:        if (strcmp((*prev)->var_name, var) == 0) {
+    #####:   37:            LiveAlloc* to_free = *prev;
+    #####:   38:            *prev = (*prev)->next;
+    #####:   39:            free(to_free->var_name);
+    #####:   40:            free(to_free->type_name);
+    #####:   41:            free(to_free);
+    #####:   42:            return;
+        -:   43:        }
+    #####:   44:        prev = &(*prev)->next;
+        -:   45:    }
+        -:   46:}
+        -:   47:
+        -:   48:// Get live allocations at current point
+    #####:   49:LiveAlloc* get_live_allocs(ExceptionContext* ctx) {
+    #####:   50:    return ctx ? ctx->live_allocs : NULL;
+        -:   51:}
+        -:   52:
+        -:   53:// Create landing pad for current context
+    #####:   54:LandingPad* create_landing_pad(ExceptionContext* ctx) {
+    #####:   55:    if (!ctx) return NULL;
+        -:   56:
+    #####:   57:    LandingPad* pad = malloc(sizeof(LandingPad));
+    #####:   58:    if (!pad) return NULL;
+    #####:   59:    pad->id = next_pad_id++;
+    #####:   60:    pad->try_start = 0;
+    #####:   61:    pad->try_end = 0;
+    #####:   62:    pad->cleanups = NULL;
+    #####:   63:    pad->next = NULL;
+        -:   64:
+        -:   65:    // Create cleanup actions for all live allocations
+    #####:   66:    LiveAlloc* alloc = ctx->live_allocs;
+    #####:   67:    while (alloc) {
+    #####:   68:        CleanupAction* action = malloc(sizeof(CleanupAction));
+    #####:   69:        if (!action) break;  // Stop on allocation failure
+    #####:   70:        action->var_name = strdup(alloc->var_name);
+    #####:   71:        action->cleanup_fn = strdup("dec_ref");
+    #####:   72:        if (!action->var_name || !action->cleanup_fn) {
+    #####:   73:            free(action->var_name);
+    #####:   74:            free(action->cleanup_fn);
+    #####:   75:            free(action);
+    #####:   76:            break;
+        -:   77:        }
+        -:   78:
+    #####:   79:        action->next = pad->cleanups;
+    #####:   80:        pad->cleanups = action;
+        -:   81:
+    #####:   82:        alloc = alloc->next;
+        -:   83:    }
+        -:   84:
+    #####:   85:    ctx->current_pad = pad;
+    #####:   86:    return pad;
+        -:   87:}
+        -:   88:
+        -:   89:// Generate exception runtime
+      280:   90:void gen_exception_runtime(void) {
+      280:   91:    printf("\n// Phase 10: Exception Handling Runtime\n");
+      280:   92:    printf("// LLVM-style landing pads with ASAP cleanup\n\n");
+        -:   93:
+        -:   94:    // Exception state
+      280:   95:    printf("#include <setjmp.h>\n\n");
+        -:   96:
+      280:   97:    printf("// Exception types\n");
+      280:   98:    printf("typedef enum {\n");
+      280:   99:    printf("    EXC_NONE = 0,\n");
+      280:  100:    printf("    EXC_RUNTIME_ERROR,\n");
+      280:  101:    printf("    EXC_OUT_OF_MEMORY,\n");
+      280:  102:    printf("    EXC_USER_DEFINED\n");
+      280:  103:    printf("} ExceptionType;\n\n");
+        -:  104:
+      280:  105:    printf("// Exception value\n");
+      280:  106:    printf("typedef struct Exception {\n");
+      280:  107:    printf("    ExceptionType type;\n");
+      280:  108:    printf("    const char* message;\n");
+      280:  109:    printf("    void* data;\n");
+      280:  110:    printf("} Exception;\n\n");
+        -:  111:
+        -:  112:    // Exception context stack
+      280:  113:    printf("// Exception context for nested try/catch\n");
+      280:  114:    printf("typedef struct ExcFrame {\n");
+      280:  115:    printf("    jmp_buf env;\n");
+      280:  116:    printf("    Exception exc;\n");
+      280:  117:    printf("    struct ExcFrame* prev;\n");
+      280:  118:    printf("    void** cleanup_vars;     // Variables to clean up\n");
+      280:  119:    printf("    int cleanup_count;\n");
+      280:  120:    printf("    int cleanup_capacity;\n");
+      280:  121:    printf("} ExcFrame;\n\n");
+        -:  122:
+      280:  123:    printf("ExcFrame* EXC_STACK = NULL;\n\n");
+        -:  124:
+        -:  125:    // Push exception frame
+      280:  126:    printf("// Enter try block\n");
+      280:  127:    printf("ExcFrame* exc_push() {\n");
+      280:  128:    printf("    ExcFrame* frame = malloc(sizeof(ExcFrame));\n");
+      280:  129:    printf("    frame->exc.type = EXC_NONE;\n");
+      280:  130:    printf("    frame->exc.message = NULL;\n");
+      280:  131:    printf("    frame->exc.data = NULL;\n");
+      280:  132:    printf("    frame->prev = EXC_STACK;\n");
+      280:  133:    printf("    frame->cleanup_vars = malloc(16 * sizeof(void*));\n");
+      280:  134:    printf("    frame->cleanup_count = 0;\n");
+      280:  135:    printf("    frame->cleanup_capacity = 16;\n");
+      280:  136:    printf("    EXC_STACK = frame;\n");
+      280:  137:    printf("    return frame;\n");
+      280:  138:    printf("}\n\n");
+        -:  139:
+        -:  140:    // Pop exception frame
+      280:  141:    printf("// Exit try block normally\n");
+      280:  142:    printf("void exc_pop() {\n");
+      280:  143:    printf("    if (!EXC_STACK) return;\n");
+      280:  144:    printf("    ExcFrame* frame = EXC_STACK;\n");
+      280:  145:    printf("    EXC_STACK = frame->prev;\n");
+      280:  146:    printf("    free(frame->cleanup_vars);\n");
+      280:  147:    printf("    free(frame);\n");
+      280:  148:    printf("}\n\n");
+        -:  149:
+        -:  150:    // Register cleanup
+      280:  151:    printf("// Register variable for cleanup on exception\n");
+      280:  152:    printf("void exc_register_cleanup(void* ptr) {\n");
+      280:  153:    printf("    if (!EXC_STACK || !ptr) return;\n");
+      280:  154:    printf("    ExcFrame* frame = EXC_STACK;\n");
+      280:  155:    printf("    if (frame->cleanup_count >= frame->cleanup_capacity) {\n");
+      280:  156:    printf("        frame->cleanup_capacity *= 2;\n");
+      280:  157:    printf("        frame->cleanup_vars = realloc(frame->cleanup_vars,\n");
+      280:  158:    printf("            frame->cleanup_capacity * sizeof(void*));\n");
+      280:  159:    printf("    }\n");
+      280:  160:    printf("    frame->cleanup_vars[frame->cleanup_count++] = ptr;\n");
+      280:  161:    printf("}\n\n");
+        -:  162:
+        -:  163:    // Unregister cleanup (after normal free)
+      280:  164:    printf("// Unregister variable (after normal free)\n");
+      280:  165:    printf("void exc_unregister_cleanup(void* ptr) {\n");
+      280:  166:    printf("    if (!EXC_STACK || !ptr) return;\n");
+      280:  167:    printf("    ExcFrame* frame = EXC_STACK;\n");
+      280:  168:    printf("    for (int i = 0; i < frame->cleanup_count; i++) {\n");
+      280:  169:    printf("        if (frame->cleanup_vars[i] == ptr) {\n");
+      280:  170:    printf("            frame->cleanup_vars[i] = frame->cleanup_vars[--frame->cleanup_count];\n");
+      280:  171:    printf("            return;\n");
+      280:  172:    printf("        }\n");
+      280:  173:    printf("    }\n");
+      280:  174:    printf("}\n\n");
+        -:  175:
+        -:  176:    // Run cleanups (landing pad)
+      280:  177:    printf("// Landing pad: clean up all registered variables\n");
+      280:  178:    printf("void exc_run_cleanups() {\n");
+      280:  179:    printf("    if (!EXC_STACK) return;\n");
+      280:  180:    printf("    ExcFrame* frame = EXC_STACK;\n");
+      280:  181:    printf("    // Clean up in reverse order (LIFO)\n");
+      280:  182:    printf("    for (int i = frame->cleanup_count - 1; i >= 0; i--) {\n");
+      280:  183:    printf("        Obj* obj = (Obj*)frame->cleanup_vars[i];\n");
+      280:  184:    printf("        if (obj) dec_ref(obj);\n");
+      280:  185:    printf("    }\n");
+      280:  186:    printf("    frame->cleanup_count = 0;\n");
+      280:  187:    printf("}\n\n");
+        -:  188:
+        -:  189:    // Throw exception
+      280:  190:    printf("// Throw an exception\n");
+      280:  191:    printf("void exc_throw(ExceptionType type, const char* message) {\n");
+      280:  192:    printf("    if (!EXC_STACK) {\n");
+      280:  193:    printf("        fprintf(stderr, \"Uncaught exception: %%s\\n\", message);\n");
+      280:  194:    printf("        exit(1);\n");
+      280:  195:    printf("    }\n");
+      280:  196:    printf("    EXC_STACK->exc.type = type;\n");
+      280:  197:    printf("    EXC_STACK->exc.message = message;\n");
+      280:  198:    printf("    exc_run_cleanups();\n");
+      280:  199:    printf("    longjmp(EXC_STACK->env, 1);\n");
+      280:  200:    printf("}\n\n");
+        -:  201:
+        -:  202:    // Try/catch macros
+      280:  203:    printf("// Try/catch macros\n");
+      280:  204:    printf("#define TRY \\\n");
+      280:  205:    printf("    do { \\\n");
+      280:  206:    printf("        ExcFrame* _exc_frame = exc_push(); \\\n");
+      280:  207:    printf("        if (setjmp(_exc_frame->env) == 0) {\n\n");
+        -:  208:
+      280:  209:    printf("#define CATCH(exc_var) \\\n");
+      280:  210:    printf("            exc_pop(); \\\n");
+      280:  211:    printf("        } else { \\\n");
+      280:  212:    printf("            Exception exc_var = EXC_STACK->exc; \\\n");
+      280:  213:    printf("            exc_pop();\n\n");
+        -:  214:
+      280:  215:    printf("#define END_TRY \\\n");
+      280:  216:    printf("        } \\\n");
+      280:  217:    printf("    } while(0)\n\n");
+        -:  218:
+        -:  219:    // Allocate with auto-registration
+      280:  220:    printf("// Allocate with automatic exception cleanup registration\n");
+      280:  221:    printf("Obj* mk_int_exc(long val) {\n");
+      280:  222:    printf("    Obj* obj = mk_int(val);\n");
+      280:  223:    printf("    exc_register_cleanup(obj);\n");
+      280:  224:    printf("    return obj;\n");
+      280:  225:    printf("}\n\n");
+        -:  226:
+      280:  227:    printf("Obj* mk_pair_exc(Obj* a, Obj* b) {\n");
+      280:  228:    printf("    Obj* obj = mk_pair(a, b);\n");
+      280:  229:    printf("    exc_register_cleanup(obj);\n");
+      280:  230:    printf("    return obj;\n");
+      280:  231:    printf("}\n\n");
+        -:  232:
+        -:  233:    // Safe free with unregistration
+      280:  234:    printf("// Free with automatic unregistration\n");
+      280:  235:    printf("void free_exc(Obj* obj) {\n");
+      280:  236:    printf("    exc_unregister_cleanup(obj);\n");
+      280:  237:    printf("    dec_ref(obj);\n");
+      280:  238:    printf("}\n\n");
+      280:  239:}
+        -:  240:
+        -:  241:// Generate cleanup code for landing pad
+    #####:  242:void gen_landing_pad_code(LandingPad* pad) {
+    #####:  243:    if (!pad) return;
+        -:  244:
+    #####:  245:    printf("landing_pad_%d:\n", pad->id);
+        -:  246:
+    #####:  247:    CleanupAction* action = pad->cleanups;
+    #####:  248:    while (action) {
+    #####:  249:        printf("    %s(%s);\n", action->cleanup_fn, action->var_name);
+    #####:  250:        action = action->next;
+        -:  251:    }
+        -:  252:
+    #####:  253:    printf("    // Resume unwinding or return to handler\n");
+        -:  254:}

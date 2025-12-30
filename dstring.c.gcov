@@ -1,0 +1,163 @@
+        -:    0:Source:src/util/dstring.c
+        -:    1:#define _POSIX_C_SOURCE 200809L
+        -:    2:#include "dstring.h"
+        -:    3:#include <stdlib.h>
+        -:    4:#include <string.h>
+        -:    5:#include <stdio.h>
+        -:    6:#include <stdarg.h>
+        -:    7:#include <stdint.h>
+        -:    8:
+        -:    9:#define DS_INITIAL_CAP 64
+        -:   10:
+        -:   11:// Create empty dynamic string
+      352:   12:DString* ds_new(void) {
+      352:   13:    return ds_with_capacity(DS_INITIAL_CAP);
+        -:   14:}
+        -:   15:
+        -:   16:// Create with initial capacity
+      352:   17:DString* ds_with_capacity(size_t cap) {
+      352:   18:    DString* ds = malloc(sizeof(DString));
+     352*:   19:    if (!ds) return NULL;
+        -:   20:
+     352*:   21:    if (cap < 16) cap = 16;
+      352:   22:    ds->data = malloc(cap);
+      352:   23:    if (!ds->data) {
+    #####:   24:        free(ds);
+    #####:   25:        return NULL;
+        -:   26:    }
+        -:   27:
+      352:   28:    ds->data[0] = '\0';
+      352:   29:    ds->len = 0;
+      352:   30:    ds->capacity = cap;
+      352:   31:    return ds;
+        -:   32:}
+        -:   33:
+        -:   34:// Create from C string
+    #####:   35:DString* ds_from(const char* s) {
+    #####:   36:    if (!s) return ds_new();
+        -:   37:
+    #####:   38:    size_t len = strlen(s);
+    #####:   39:    size_t cap = len + 1;
+    #####:   40:    if (cap < DS_INITIAL_CAP) cap = DS_INITIAL_CAP;
+        -:   41:
+    #####:   42:    DString* ds = ds_with_capacity(cap);
+    #####:   43:    if (!ds) return NULL;
+        -:   44:
+    #####:   45:    memcpy(ds->data, s, len + 1);
+    #####:   46:    ds->len = len;
+    #####:   47:    return ds;
+        -:   48:}
+        -:   49:
+        -:   50:// Free dynamic string
+       64:   51:void ds_free(DString* ds) {
+      64*:   52:    if (!ds) return;
+       64:   53:    free(ds->data);
+       64:   54:    free(ds);
+        -:   55:}
+        -:   56:
+        -:   57:// Get C string pointer
+       64:   58:const char* ds_cstr(DString* ds) {
+      64*:   59:    return ds ? ds->data : "";
+        -:   60:}
+        -:   61:
+        -:   62:// Take ownership of internal buffer
+      288:   63:char* ds_take(DString* ds) {
+     288*:   64:    if (!ds) return NULL;
+      288:   65:    char* result = ds->data;
+      288:   66:    free(ds);
+      288:   67:    return result;
+        -:   68:}
+        -:   69:
+        -:   70:// Clear contents
+    #####:   71:void ds_clear(DString* ds) {
+    #####:   72:    if (!ds) return;
+    #####:   73:    ds->len = 0;
+    #####:   74:    ds->data[0] = '\0';
+        -:   75:}
+        -:   76:
+        -:   77:// Get length
+    #####:   78:size_t ds_len(DString* ds) {
+    #####:   79:    return ds ? ds->len : 0;
+        -:   80:}
+        -:   81:
+        -:   82:// Ensure capacity - returns 1 on success, 0 on failure
+      349:   83:int ds_ensure_capacity(DString* ds, size_t cap) {
+     349*:   84:    if (!ds) return 0;
+      349:   85:    if (ds->capacity >= cap) return 1;
+        -:   86:
+        -:   87:    // Prevent integer overflow in capacity doubling
+       17:   88:    size_t new_cap = ds->capacity;
+       37:   89:    while (new_cap < cap) {
+       20:   90:        if (new_cap > SIZE_MAX / 2) {
+    #####:   91:            new_cap = cap;  // Just use exact size if we'd overflow
+    #####:   92:            break;
+        -:   93:        }
+       20:   94:        new_cap *= 2;
+        -:   95:    }
+        -:   96:
+       17:   97:    char* new_data = realloc(ds->data, new_cap);
+      17*:   98:    if (!new_data) return 0;  // Allocation failed
+        -:   99:
+       17:  100:    ds->data = new_data;
+       17:  101:    ds->capacity = new_cap;
+       17:  102:    return 1;
+        -:  103:}
+        -:  104:
+        -:  105:// Append C string
+       33:  106:void ds_append(DString* ds, const char* s) {
+      33*:  107:    if (!ds || !s) return;
+       33:  108:    ds_append_len(ds, s, strlen(s));
+        -:  109:}
+        -:  110:
+        -:  111:// Append single character
+    #####:  112:void ds_append_char(DString* ds, char c) {
+    #####:  113:    if (!ds) return;
+    #####:  114:    if (!ds_ensure_capacity(ds, ds->len + 2)) return;  // Check for failure
+    #####:  115:    ds->data[ds->len++] = c;
+    #####:  116:    ds->data[ds->len] = '\0';
+        -:  117:}
+        -:  118:
+        -:  119:// Append with length
+       66:  120:void ds_append_len(DString* ds, const char* s, size_t len) {
+       66:  121:    if (!ds || !s || len == 0) return;
+        -:  122:
+      57*:  123:    if (!ds_ensure_capacity(ds, ds->len + len + 1)) return;  // Check for failure
+       57:  124:    memcpy(ds->data + ds->len, s, len);
+       57:  125:    ds->len += len;
+       57:  126:    ds->data[ds->len] = '\0';
+        -:  127:}
+        -:  128:
+        -:  129:// Append integer
+       33:  130:void ds_append_int(DString* ds, long i) {
+      33*:  131:    if (!ds) return;
+        -:  132:    char buf[32];
+       33:  133:    int len = snprintf(buf, sizeof(buf), "%ld", i);
+       33:  134:    ds_append_len(ds, buf, len);
+        -:  135:}
+        -:  136:
+        -:  137:// Printf-style append
+      292:  138:void ds_printf(DString* ds, const char* fmt, ...) {
+     292*:  139:    if (!ds || !fmt) return;
+        -:  140:
+        -:  141:    va_list args, args_copy;
+      292:  142:    va_start(args, fmt);
+      292:  143:    va_copy(args_copy, args);
+        -:  144:
+        -:  145:    // Calculate needed size
+      292:  146:    int needed = vsnprintf(NULL, 0, fmt, args);
+      292:  147:    va_end(args);
+        -:  148:
+      292:  149:    if (needed < 0) {
+    #####:  150:        va_end(args_copy);
+    #####:  151:        return;
+        -:  152:    }
+        -:  153:
+      292:  154:    if (!ds_ensure_capacity(ds, ds->len + needed + 1)) {
+    #####:  155:        va_end(args_copy);
+    #####:  156:        return;  // Allocation failed
+        -:  157:    }
+        -:  158:
+      292:  159:    vsnprintf(ds->data + ds->len, needed + 1, fmt, args_copy);
+      292:  160:    ds->len += needed;
+      292:  161:    va_end(args_copy);
+        -:  162:}

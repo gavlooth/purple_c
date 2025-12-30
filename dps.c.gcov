@@ -1,0 +1,172 @@
+        -:    0:Source:src/analysis/dps.c
+        -:    1:// Phase 9: Destination-Passing Style (DPS) Implementation
+        -:    2:// Source: "Destination-passing style for efficient memory management" (FHPC 2017)
+        -:    3:
+        -:    4:#include "dps.h"
+        -:    5:#include <stdio.h>
+        -:    6:#include <stdlib.h>
+        -:    7:#include <string.h>
+        -:    8:
+        -:    9:// Analyze expression for DPS opportunities
+    #####:   10:DPSInfo* analyze_dps(Value* expr) {
+    #####:   11:    DPSInfo* info = malloc(sizeof(DPSInfo));
+    #####:   12:    info->dps_class = DPS_NONE;
+    #####:   13:    info->returns_fresh = 0;
+    #####:   14:    info->can_stack_dest = 0;
+    #####:   15:    info->alloc_count = 0;
+    #####:   16:    info->dest_type = NULL;
+        -:   17:
+    #####:   18:    if (!expr) return info;
+        -:   19:
+        -:   20:    // Check for direct allocations (mk_int, mk_pair, cons)
+    #####:   21:    if (expr->tag == T_CELL) {
+    #####:   22:        Value* head = expr->cell.car;
+    #####:   23:        if (head && head->tag == T_SYM) {
+    #####:   24:            if (strcmp(head->s, "lift") == 0 ||
+    #####:   25:                strcmp(head->s, "cons") == 0) {
+    #####:   26:                info->returns_fresh = 1;
+    #####:   27:                info->alloc_count = 1;
+    #####:   28:                info->dest_type = "Obj";
+        -:   29:            }
+        -:   30:        }
+        -:   31:    }
+        -:   32:
+    #####:   33:    return info;
+        -:   34:}
+        -:   35:
+        -:   36:// Check if a lambda is a DPS candidate
+    #####:   37:int is_dps_candidate(Value* lambda) {
+    #####:   38:    if (!lambda || lambda->tag != T_LAMBDA) return 0;
+        -:   39:
+        -:   40:    // Analyze lambda body for fresh allocations in return position
+    #####:   41:    Value* body = lambda->lam.body;
+    #####:   42:    DPSInfo* info = analyze_dps(body);
+        -:   43:
+    #####:   44:    int result = info->returns_fresh;
+    #####:   45:    free(info);
+        -:   46:
+    #####:   47:    return result;
+        -:   48:}
+        -:   49:
+        -:   50:// Find all DPS candidates in program
+    #####:   51:DPSCandidate* find_dps_candidates(Value* program) {
+        -:   52:    (void)program;  // For now, return empty list
+        -:   53:    // Full implementation would traverse program AST
+    #####:   54:    return NULL;
+        -:   55:}
+        -:   56:
+        -:   57:// Generate DPS runtime support
+      280:   58:void gen_dps_runtime(void) {
+      280:   59:    printf("\n// Phase 9: Destination-Passing Style (DPS) Runtime\n");
+      280:   60:    printf("// Enables stack allocation of return values\n\n");
+        -:   61:
+        -:   62:    // Destination type for pre-allocated slots
+      280:   63:    printf("typedef struct Dest {\n");
+      280:   64:    printf("    Obj* ptr;       // Pointer to destination memory\n");
+      280:   65:    printf("    int is_stack;   // 1 if stack-allocated, 0 if heap\n");
+      280:   66:    printf("} Dest;\n\n");
+        -:   67:
+        -:   68:    // Create stack destination
+      280:   69:    printf("// Allocate destination on stack\n");
+      280:   70:    printf("#define STACK_DEST(name) \\\n");
+      280:   71:    printf("    Obj name##_storage; \\\n");
+      280:   72:    printf("    Dest name = { &name##_storage, 1 }\n\n");
+        -:   73:
+        -:   74:    // Create heap destination
+      280:   75:    printf("// Allocate destination on heap\n");
+      280:   76:    printf("Dest heap_dest() {\n");
+      280:   77:    printf("    Dest d;\n");
+      280:   78:    printf("    d.ptr = malloc(sizeof(Obj));\n");
+      280:   79:    printf("    d.is_stack = 0;\n");
+      280:   80:    printf("    return d;\n");
+      280:   81:    printf("}\n\n");
+        -:   82:
+        -:   83:    // DPS-style integer constructor
+      280:   84:    printf("// Write integer to destination\n");
+      280:   85:    printf("Obj* write_int(Dest* dest, long value) {\n");
+      280:   86:    printf("    dest->ptr->mark = 1;\n");
+      280:   87:    printf("    dest->ptr->scc_id = -1;\n");
+      280:   88:    printf("    dest->ptr->is_pair = 0;\n");
+      280:   89:    printf("    dest->ptr->i = value;\n");
+      280:   90:    printf("    return dest->ptr;\n");
+      280:   91:    printf("}\n\n");
+        -:   92:
+        -:   93:    // DPS-style pair constructor
+      280:   94:    printf("// Write pair to destination\n");
+      280:   95:    printf("Obj* write_pair(Dest* dest, Obj* a, Obj* b) {\n");
+      280:   96:    printf("    dest->ptr->mark = 1;\n");
+      280:   97:    printf("    dest->ptr->scc_id = -1;\n");
+      280:   98:    printf("    dest->ptr->is_pair = 1;\n");
+      280:   99:    printf("    dest->ptr->a = a;\n");
+      280:  100:    printf("    dest->ptr->b = b;\n");
+      280:  101:    printf("    return dest->ptr;\n");
+      280:  102:    printf("}\n\n");
+        -:  103:
+        -:  104:    // DPS-aware add function
+      280:  105:    printf("// DPS arithmetic - write result to destination\n");
+      280:  106:    printf("Obj* add_dps(Dest* dest, Obj* a, Obj* b) {\n");
+      280:  107:    printf("    return write_int(dest, a->i + b->i);\n");
+      280:  108:    printf("}\n\n");
+        -:  109:
+      280:  110:    printf("Obj* sub_dps(Dest* dest, Obj* a, Obj* b) {\n");
+      280:  111:    printf("    return write_int(dest, a->i - b->i);\n");
+      280:  112:    printf("}\n\n");
+        -:  113:
+        -:  114:    // Pipeline support - map with destination array
+      280:  115:    printf("// DPS map - write results to destination array\n");
+      280:  116:    printf("// Enables zero-allocation pipelines\n");
+      280:  117:    printf("typedef Obj* (*MapFn)(Obj*);\n\n");
+        -:  118:
+      280:  119:    printf("void map_dps(Dest* dests, MapFn f, Obj** inputs, int count) {\n");
+      280:  120:    printf("    for (int i = 0; i < count; i++) {\n");
+      280:  121:    printf("        Obj* result = f(inputs[i]);\n");
+      280:  122:    printf("        dests[i].ptr->mark = result->mark;\n");
+      280:  123:    printf("        dests[i].ptr->scc_id = result->scc_id;\n");
+      280:  124:    printf("        dests[i].ptr->is_pair = result->is_pair;\n");
+      280:  125:    printf("        if (result->is_pair) {\n");
+      280:  126:    printf("            dests[i].ptr->a = result->a;\n");
+      280:  127:    printf("            dests[i].ptr->b = result->b;\n");
+      280:  128:    printf("        } else {\n");
+      280:  129:    printf("            dests[i].ptr->i = result->i;\n");
+      280:  130:    printf("        }\n");
+      280:  131:    printf("    }\n");
+      280:  132:    printf("}\n\n");
+        -:  133:
+        -:  134:    // Fold with destination
+      280:  135:    printf("// DPS fold - accumulate into destination\n");
+      280:  136:    printf("typedef Obj* (*FoldFn)(Obj*, Obj*);\n\n");
+        -:  137:
+      280:  138:    printf("Obj* fold_dps(Dest* dest, FoldFn f, Obj* init, Obj** inputs, int count) {\n");
+      280:  139:    printf("    Obj* acc = init;\n");
+      280:  140:    printf("    for (int i = 0; i < count; i++) {\n");
+      280:  141:    printf("        acc = f(acc, inputs[i]);\n");
+      280:  142:    printf("    }\n");
+      280:  143:    printf("    // Write final result to destination\n");
+      280:  144:    printf("    dest->ptr->mark = acc->mark;\n");
+      280:  145:    printf("    dest->ptr->scc_id = acc->scc_id;\n");
+      280:  146:    printf("    dest->ptr->is_pair = acc->is_pair;\n");
+      280:  147:    printf("    if (acc->is_pair) {\n");
+      280:  148:    printf("        dest->ptr->a = acc->a;\n");
+      280:  149:    printf("        dest->ptr->b = acc->b;\n");
+      280:  150:    printf("    } else {\n");
+      280:  151:    printf("        dest->ptr->i = acc->i;\n");
+      280:  152:    printf("    }\n");
+      280:  153:    printf("    return dest->ptr;\n");
+      280:  154:    printf("}\n\n");
+      280:  155:}
+        -:  156:
+        -:  157:// Generate DPS-transformed function
+    #####:  158:void gen_dps_function(DPSCandidate* candidate, Value* body) {
+    #####:  159:    if (!candidate) return;
+        -:  160:
+    #####:  161:    printf("// DPS-transformed: %s\n", candidate->func_name);
+    #####:  162:    printf("Obj* %s_dps(Dest* dest", candidate->func_name);
+        -:  163:    // Would add other parameters here
+    #####:  164:    printf(") {\n");
+        -:  165:
+        -:  166:    // Generate body with DPS writes instead of allocations
+        -:  167:    (void)body;  // Full implementation would transform body
+        -:  168:
+    #####:  169:    printf("    return dest->ptr;\n");
+    #####:  170:    printf("}\n\n");
+        -:  171:}

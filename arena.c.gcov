@@ -1,0 +1,241 @@
+        -:    0:Source:src/memory/arena.c
+        -:    1:#include "arena.h"
+        -:    2:#include <stdio.h>
+        -:    3:#include <string.h>
+        -:    4:
+        -:    5:// -- Arena Management --
+        -:    6:
+    #####:    7:Arena* arena_create(size_t block_size) {
+    #####:    8:    Arena* a = malloc(sizeof(Arena));
+    #####:    9:    if (!a) return NULL;
+    #####:   10:    a->block_size = block_size > 0 ? block_size : 4096;
+    #####:   11:    a->blocks = NULL;
+    #####:   12:    a->current = NULL;
+    #####:   13:    a->id = 0;
+    #####:   14:    a->externals = NULL;
+    #####:   15:    return a;
+        -:   16:}
+        -:   17:
+    #####:   18:void* arena_alloc(Arena* a, size_t size) {
+    #####:   19:    if (!a) return NULL;
+        -:   20:
+        -:   21:    // Align to 8 bytes
+    #####:   22:    size = (size + 7) & ~7;
+        -:   23:
+    #####:   24:    if (!a->current || a->current->used + size > a->current->size) {
+        -:   25:        // Need new block
+    #####:   26:        size_t bs = a->block_size;
+    #####:   27:        if (size > bs) bs = size;
+        -:   28:
+    #####:   29:        ArenaBlock* b = malloc(sizeof(ArenaBlock));
+    #####:   30:        if (!b) return NULL;
+    #####:   31:        b->memory = malloc(bs);
+    #####:   32:        if (!b->memory) {
+    #####:   33:            free(b);
+    #####:   34:            return NULL;
+        -:   35:        }
+    #####:   36:        b->size = bs;
+    #####:   37:        b->used = 0;
+    #####:   38:        b->next = a->blocks;
+    #####:   39:        a->blocks = b;
+    #####:   40:        a->current = b;
+        -:   41:    }
+        -:   42:
+    #####:   43:    void* ptr = a->current->memory + a->current->used;
+    #####:   44:    a->current->used += size;
+    #####:   45:    return ptr;
+        -:   46:}
+        -:   47:
+    #####:   48:void arena_destroy(Arena* a) {
+    #####:   49:    if (!a) return;
+        -:   50:
+    #####:   51:    arena_release_externals(a);
+        -:   52:
+    #####:   53:    ArenaBlock* b = a->blocks;
+    #####:   54:    while (b) {
+    #####:   55:        ArenaBlock* next = b->next;
+    #####:   56:        free(b->memory);
+    #####:   57:        free(b);
+    #####:   58:        b = next;
+        -:   59:    }
+    #####:   60:    free(a);
+        -:   61:}
+        -:   62:
+    #####:   63:void arena_reset(Arena* a) {
+    #####:   64:    if (!a) return;
+        -:   65:
+    #####:   66:    ArenaBlock* b = a->blocks;
+    #####:   67:    while (b) {
+    #####:   68:        b->used = 0;
+    #####:   69:        b = b->next;
+        -:   70:    }
+    #####:   71:    a->current = a->blocks;
+        -:   72:}
+        -:   73:
+    #####:   74:void arena_register_external(Arena* a, void* ptr, ArenaReleaseFn release) {
+    #####:   75:    if (!a || !ptr || !release) return;
+    #####:   76:    ArenaExternal* ext = malloc(sizeof(ArenaExternal));
+    #####:   77:    ext->ptr = ptr;
+    #####:   78:    ext->release = release;
+    #####:   79:    ext->next = a->externals;
+    #####:   80:    a->externals = ext;
+        -:   81:}
+        -:   82:
+    #####:   83:void arena_release_externals(Arena* a) {
+    #####:   84:    if (!a) return;
+    #####:   85:    ArenaExternal* ext = a->externals;
+    #####:   86:    while (ext) {
+    #####:   87:        ArenaExternal* next = ext->next;
+    #####:   88:        ext->release(ext->ptr);
+    #####:   89:        free(ext);
+    #####:   90:        ext = next;
+        -:   91:    }
+    #####:   92:    a->externals = NULL;
+        -:   93:}
+        -:   94:
+        -:   95:// -- Scope Detection --
+        -:   96:
+        -:   97:static int next_scope_id = 1;
+        -:   98:
+    #####:   99:ArenaScope* find_arena_scopes(Value* expr) {
+        -:  100:    // Look for let bindings with cyclic shapes that don't escape
+        -:  101:    // For now, return NULL - full implementation would analyze the AST
+        -:  102:    (void)expr;
+    #####:  103:    return NULL;
+        -:  104:}
+        -:  105:
+    #####:  106:int should_use_arena(const char* var_name, ArenaScope* scopes) {
+    #####:  107:    ArenaScope* s = scopes;
+    #####:  108:    while (s) {
+    #####:  109:        for (int i = 0; i < s->var_count; i++) {
+    #####:  110:            if (strcmp(s->allocated_vars[i], var_name) == 0) {
+    #####:  111:                return s->id;
+        -:  112:            }
+        -:  113:        }
+    #####:  114:        s = s->next;
+        -:  115:    }
+    #####:  116:    return 0;
+        -:  117:}
+        -:  118:
+        -:  119:// -- Code Generation --
+        -:  120:
+      280:  121:void gen_arena_runtime(void) {
+      280:  122:    printf("\n// Phase 8: Arena Allocator for Cyclic Structures\n");
+      280:  123:    printf("// Bulk allocation, O(1) deallocation\n\n");
+        -:  124:
+      280:  125:    printf("typedef struct ArenaBlock {\n");
+      280:  126:    printf("    char* memory;\n");
+      280:  127:    printf("    size_t size;\n");
+      280:  128:    printf("    size_t used;\n");
+      280:  129:    printf("    struct ArenaBlock* next;\n");
+      280:  130:    printf("} ArenaBlock;\n\n");
+        -:  131:
+      280:  132:    printf("typedef struct Arena {\n");
+      280:  133:    printf("    ArenaBlock* current;\n");
+      280:  134:    printf("    ArenaBlock* blocks;\n");
+      280:  135:    printf("    size_t block_size;\n");
+      280:  136:    printf("    struct ArenaExternal* externals;\n");
+      280:  137:    printf("} Arena;\n\n");
+        -:  138:
+      280:  139:    printf("typedef void (*ArenaReleaseFn)(void*);\n");
+      280:  140:    printf("typedef struct ArenaExternal {\n");
+      280:  141:    printf("    void* ptr;\n");
+      280:  142:    printf("    ArenaReleaseFn release;\n");
+      280:  143:    printf("    struct ArenaExternal* next;\n");
+      280:  144:    printf("} ArenaExternal;\n\n");
+        -:  145:
+      280:  146:    printf("Arena* arena_create(size_t block_size) {\n");
+      280:  147:    printf("    Arena* a = malloc(sizeof(Arena));\n");
+      280:  148:    printf("    a->block_size = block_size ? block_size : 4096;\n");
+      280:  149:    printf("    a->blocks = NULL;\n");
+      280:  150:    printf("    a->current = NULL;\n");
+      280:  151:    printf("    a->externals = NULL;\n");
+      280:  152:    printf("    return a;\n");
+      280:  153:    printf("}\n\n");
+        -:  154:
+      280:  155:    printf("void arena_register_external(Arena* a, void* ptr, ArenaReleaseFn release) {\n");
+      280:  156:    printf("    if (!a || !ptr || !release) return;\n");
+      280:  157:    printf("    ArenaExternal* ext = malloc(sizeof(ArenaExternal));\n");
+      280:  158:    printf("    ext->ptr = ptr;\n");
+      280:  159:    printf("    ext->release = release;\n");
+      280:  160:    printf("    ext->next = a->externals;\n");
+      280:  161:    printf("    a->externals = ext;\n");
+      280:  162:    printf("}\n\n");
+        -:  163:
+      280:  164:    printf("void arena_release_externals(Arena* a) {\n");
+      280:  165:    printf("    if (!a) return;\n");
+      280:  166:    printf("    ArenaExternal* ext = a->externals;\n");
+      280:  167:    printf("    while (ext) {\n");
+      280:  168:    printf("        ArenaExternal* next = ext->next;\n");
+      280:  169:    printf("        ext->release(ext->ptr);\n");
+      280:  170:    printf("        free(ext);\n");
+      280:  171:    printf("        ext = next;\n");
+      280:  172:    printf("    }\n");
+      280:  173:    printf("    a->externals = NULL;\n");
+      280:  174:    printf("}\n\n");
+        -:  175:
+      280:  176:    printf("void* arena_alloc(Arena* a, size_t size) {\n");
+      280:  177:    printf("    size = (size + 7) & ~7;\n");
+      280:  178:    printf("    if (!a->current || a->current->used + size > a->current->size) {\n");
+      280:  179:    printf("        size_t bs = a->block_size;\n");
+      280:  180:    printf("        if (size > bs) bs = size;\n");
+      280:  181:    printf("        ArenaBlock* b = malloc(sizeof(ArenaBlock));\n");
+      280:  182:    printf("        b->memory = malloc(bs);\n");
+      280:  183:    printf("        b->size = bs;\n");
+      280:  184:    printf("        b->used = 0;\n");
+      280:  185:    printf("        b->next = a->blocks;\n");
+      280:  186:    printf("        a->blocks = b;\n");
+      280:  187:    printf("        a->current = b;\n");
+      280:  188:    printf("    }\n");
+      280:  189:    printf("    void* ptr = a->current->memory + a->current->used;\n");
+      280:  190:    printf("    a->current->used += size;\n");
+      280:  191:    printf("    return ptr;\n");
+      280:  192:    printf("}\n\n");
+        -:  193:
+      280:  194:    printf("void arena_destroy(Arena* a) {\n");
+      280:  195:    printf("    if (!a) return;\n");
+      280:  196:    printf("    arena_release_externals(a);\n");
+      280:  197:    printf("    ArenaBlock* b = a->blocks;\n");
+      280:  198:    printf("    while (b) {\n");
+      280:  199:    printf("        ArenaBlock* next = b->next;\n");
+      280:  200:    printf("        free(b->memory);\n");
+      280:  201:    printf("        free(b);\n");
+      280:  202:    printf("        b = next;\n");
+      280:  203:    printf("    }\n");
+      280:  204:    printf("    free(a);\n");
+      280:  205:    printf("}\n\n");
+        -:  206:
+        -:  207:    // Arena-aware allocators
+      280:  208:    printf("// Arena-aware allocators\n");
+      280:  209:    printf("Obj* arena_mk_int(Arena* a, long val) {\n");
+      280:  210:    printf("    Obj* o = arena_alloc(a, sizeof(Obj));\n");
+      280:  211:    printf("    o->mark = 1; o->scc_id = -1; o->is_pair = 0; o->scan_tag = 0;\n");
+      280:  212:    printf("    o->i = val;\n");
+      280:  213:    printf("    return o;\n");
+      280:  214:    printf("}\n\n");
+        -:  215:
+      280:  216:    printf("Obj* arena_mk_pair(Arena* a, Obj* car, Obj* cdr) {\n");
+      280:  217:    printf("    Obj* o = arena_alloc(a, sizeof(Obj));\n");
+      280:  218:    printf("    o->mark = 1; o->scc_id = -1; o->is_pair = 1; o->scan_tag = 0;\n");
+      280:  219:    printf("    o->a = car; o->b = cdr;\n");
+      280:  220:    printf("    return o;\n");
+      280:  221:    printf("}\n\n");
+      280:  222:}
+        -:  223:
+    #####:  224:void gen_arena_scope_begin(int scope_id) {
+    #####:  225:    printf("    // ARENA SCOPE %d begin - cyclic allocations\n", scope_id);
+    #####:  226:    printf("    Arena* _arena_%d = arena_create(0);\n", scope_id);
+    #####:  227:}
+        -:  228:
+    #####:  229:void gen_arena_scope_end(int scope_id) {
+    #####:  230:    printf("    arena_destroy(_arena_%d);  // O(1) bulk free\n", scope_id);
+    #####:  231:    printf("    // ARENA SCOPE %d end\n", scope_id);
+    #####:  232:}
+        -:  233:
+    #####:  234:void gen_arena_alloc(int scope_id, const char* var_name, const char* type) {
+    #####:  235:    if (strcmp(type, "int") == 0) {
+    #####:  236:        printf("    Obj* %s = arena_mk_int(_arena_%d, 0);\n", var_name, scope_id);
+        -:  237:    } else {
+    #####:  238:        printf("    Obj* %s = arena_mk_pair(_arena_%d, NULL, NULL);\n", var_name, scope_id);
+        -:  239:    }
+    #####:  240:}

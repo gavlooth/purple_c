@@ -1,0 +1,256 @@
+        -:    0:Source:src/memory/concurrent.c
+        -:    1:// Phase 11: Concurrency Support Implementation
+        -:    2:// Sources: SOTER (PLDI 2011), Concurrent Deferred RC (PLDI 2021), CIRC (PLDI 2024)
+        -:    3:
+        -:    4:#include "concurrent.h"
+        -:    5:#include <stdio.h>
+        -:    6:#include <stdlib.h>
+        -:    7:#include <string.h>
+        -:    8:
+        -:    9:// Analyze expression for ownership transfer
+    #####:   10:OwnershipClass analyze_ownership(Value* expr) {
+    #####:   11:    if (!expr) return OWN_LOCAL;
+        -:   12:
+        -:   13:    // Check for channel operations
+    #####:   14:    if (expr->tag == T_CELL) {
+    #####:   15:        Value* head = expr->cell.car;
+    #####:   16:        if (head && head->tag == T_SYM) {
+    #####:   17:            if (strcmp(head->s, "send") == 0) {
+    #####:   18:                return OWN_TRANSFERRED;
+        -:   19:            }
+    #####:   20:            if (strcmp(head->s, "spawn") == 0) {
+    #####:   21:                return OWN_SHARED;
+        -:   22:            }
+        -:   23:        }
+        -:   24:    }
+        -:   25:
+    #####:   26:    return OWN_LOCAL;
+        -:   27:}
+        -:   28:
+        -:   29:// Detect thread spawn points
+    #####:   30:int is_spawn_point(Value* expr) {
+    #####:   31:    if (!expr || expr->tag != T_CELL) return 0;
+        -:   32:
+    #####:   33:    Value* head = expr->cell.car;
+    #####:   34:    if (head && head->tag == T_SYM) {
+    #####:   35:        return strcmp(head->s, "spawn") == 0 ||
+    #####:   36:               strcmp(head->s, "thread") == 0 ||
+    #####:   37:               strcmp(head->s, "parallel") == 0;
+        -:   38:    }
+        -:   39:
+    #####:   40:    return 0;
+        -:   41:}
+        -:   42:
+        -:   43:// Generate concurrency runtime
+      280:   44:void gen_concurrent_runtime(void) {
+      280:   45:    printf("\n// Phase 11: Concurrency Support Runtime\n");
+      280:   46:    printf("// Ownership transfer + atomic RC for zero-pause concurrent memory\n\n");
+        -:   47:
+      280:   48:    printf("#include <stdatomic.h>\n");
+      280:   49:    printf("#include <pthread.h>\n\n");
+        -:   50:
+        -:   51:    // Thread-local storage
+      280:   52:    printf("// Thread-local region for private allocations\n");
+      280:   53:    printf("__thread int THREAD_ID = 0;\n");
+      280:   54:    printf("__thread void* THREAD_REGION = NULL;\n");
+      280:   55:    printf("__thread size_t THREAD_REGION_SIZE = 0;\n");
+      280:   56:    printf("__thread size_t THREAD_REGION_USED = 0;\n\n");
+        -:   57:
+        -:   58:    // Atomic reference count object
+      280:   59:    printf("// Concurrent object with atomic reference count\n");
+      280:   60:    printf("typedef struct ConcObj {\n");
+      280:   61:    printf("    _Atomic int rc;           // Atomic reference count\n");
+      280:   62:    printf("    int owner_thread;         // -1 if shared\n");
+      280:   63:    printf("    int is_immutable;         // 1 if frozen (no sync needed)\n");
+      280:   64:    printf("    int is_pair;\n");
+      280:   65:    printf("    union {\n");
+      280:   66:    printf("        long i;\n");
+      280:   67:    printf("        struct { struct ConcObj *a, *b; };\n");
+      280:   68:    printf("    };\n");
+      280:   69:    printf("} ConcObj;\n\n");
+        -:   70:
+        -:   71:    // Atomic increment
+      280:   72:    printf("// Atomic increment (for shared objects)\n");
+      280:   73:    printf("void conc_inc_ref(ConcObj* obj) {\n");
+      280:   74:    printf("    if (!obj) return;\n");
+      280:   75:    printf("    atomic_fetch_add(&obj->rc, 1);\n");
+      280:   76:    printf("}\n\n");
+        -:   77:
+        -:   78:    // Atomic decrement with potential free
+      280:   79:    printf("// Atomic decrement (may trigger deferred cleanup)\n");
+      280:   80:    printf("void conc_dec_ref(ConcObj* obj) {\n");
+      280:   81:    printf("    if (!obj) return;\n");
+      280:   82:    printf("    int old = atomic_fetch_sub(&obj->rc, 1);\n");
+      280:   83:    printf("    if (old == 1) {\n");
+      280:   84:    printf("        // Last reference - defer cleanup\n");
+      280:   85:    printf("        // In real impl, add to thread-local deferred list\n");
+      280:   86:    printf("        if (obj->is_pair) {\n");
+      280:   87:    printf("            conc_dec_ref(obj->a);\n");
+      280:   88:    printf("            conc_dec_ref(obj->b);\n");
+      280:   89:    printf("        }\n");
+      280:   90:    printf("        free(obj);\n");
+      280:   91:    printf("    }\n");
+      280:   92:    printf("}\n\n");
+        -:   93:
+        -:   94:    // Concurrent allocator
+      280:   95:    printf("// Allocate concurrent object\n");
+      280:   96:    printf("ConcObj* conc_mk_int(long val) {\n");
+      280:   97:    printf("    ConcObj* obj = malloc(sizeof(ConcObj));\n");
+      280:   98:    printf("    atomic_init(&obj->rc, 1);\n");
+      280:   99:    printf("    obj->owner_thread = THREAD_ID;\n");
+      280:  100:    printf("    obj->is_immutable = 0;\n");
+      280:  101:    printf("    obj->is_pair = 0;\n");
+      280:  102:    printf("    obj->i = val;\n");
+      280:  103:    printf("    return obj;\n");
+      280:  104:    printf("}\n\n");
+        -:  105:
+      280:  106:    printf("ConcObj* conc_mk_pair(ConcObj* a, ConcObj* b) {\n");
+      280:  107:    printf("    ConcObj* obj = malloc(sizeof(ConcObj));\n");
+      280:  108:    printf("    atomic_init(&obj->rc, 1);\n");
+      280:  109:    printf("    obj->owner_thread = THREAD_ID;\n");
+      280:  110:    printf("    obj->is_immutable = 0;\n");
+      280:  111:    printf("    obj->is_pair = 1;\n");
+      280:  112:    printf("    obj->a = a;\n");
+      280:  113:    printf("    obj->b = b;\n");
+      280:  114:    printf("    return obj;\n");
+      280:  115:    printf("}\n\n");
+        -:  116:
+        -:  117:    // Channel for ownership transfer
+      280:  118:    printf("// Channel for ownership transfer between threads\n");
+      280:  119:    printf("typedef struct MsgChannel {\n");
+      280:  120:    printf("    void** buffer;\n");
+      280:  121:    printf("    int capacity;\n");
+      280:  122:    printf("    _Atomic int head;\n");
+      280:  123:    printf("    _Atomic int tail;\n");
+      280:  124:    printf("    _Atomic int closed;\n");
+      280:  125:    printf("    pthread_mutex_t mutex;\n");
+      280:  126:    printf("    pthread_cond_t not_empty;\n");
+      280:  127:    printf("    pthread_cond_t not_full;\n");
+      280:  128:    printf("} MsgChannel;\n\n");
+        -:  129:
+        -:  130:    // Create channel
+      280:  131:    printf("// Create message channel\n");
+      280:  132:    printf("MsgChannel* channel_create(int capacity) {\n");
+      280:  133:    printf("    MsgChannel* ch = malloc(sizeof(MsgChannel));\n");
+      280:  134:    printf("    ch->buffer = malloc(capacity * sizeof(void*));\n");
+      280:  135:    printf("    ch->capacity = capacity;\n");
+      280:  136:    printf("    atomic_init(&ch->head, 0);\n");
+      280:  137:    printf("    atomic_init(&ch->tail, 0);\n");
+      280:  138:    printf("    atomic_init(&ch->closed, 0);\n");
+      280:  139:    printf("    pthread_mutex_init(&ch->mutex, NULL);\n");
+      280:  140:    printf("    pthread_cond_init(&ch->not_empty, NULL);\n");
+      280:  141:    printf("    pthread_cond_init(&ch->not_full, NULL);\n");
+      280:  142:    printf("    return ch;\n");
+      280:  143:    printf("}\n\n");
+        -:  144:
+        -:  145:    // Send with ownership transfer
+      280:  146:    printf("// Send message (transfers ownership, increments RC for safe sender cleanup)\n");
+      280:  147:    printf("int channel_send(MsgChannel* ch, ConcObj* obj) {\n");
+      280:  148:    printf("    if (!obj) return -1;\n");
+      280:  149:    printf("    if (atomic_load(&ch->closed)) return -1;\n");
+      280:  150:    printf("    pthread_mutex_lock(&ch->mutex);\n");
+      280:  151:    printf("    int tail = atomic_load(&ch->tail);\n");
+      280:  152:    printf("    int head = atomic_load(&ch->head);\n");
+      280:  153:    printf("    while ((tail + 1) %% ch->capacity == head) {\n");
+      280:  154:    printf("        pthread_cond_wait(&ch->not_full, &ch->mutex);\n");
+      280:  155:    printf("        if (atomic_load(&ch->closed)) {\n");
+      280:  156:    printf("            pthread_mutex_unlock(&ch->mutex);\n");
+      280:  157:    printf("            return -1;\n");
+      280:  158:    printf("        }\n");
+      280:  159:    printf("    }\n");
+      280:  160:    printf("    // Increment RC so sender can safely dec_ref after send\n");
+      280:  161:    printf("    atomic_fetch_add(&obj->rc, 1);\n");
+      280:  162:    printf("    obj->owner_thread = -1;  // Mark as in-transit\n");
+      280:  163:    printf("    ch->buffer[tail] = obj;\n");
+      280:  164:    printf("    atomic_store(&ch->tail, (tail + 1) %% ch->capacity);\n");
+      280:  165:    printf("    pthread_cond_signal(&ch->not_empty);\n");
+      280:  166:    printf("    pthread_mutex_unlock(&ch->mutex);\n");
+      280:  167:    printf("    return 0;\n");
+      280:  168:    printf("}\n\n");
+        -:  169:
+        -:  170:    // Receive with ownership transfer
+      280:  171:    printf("// Receive message (receives ownership)\n");
+      280:  172:    printf("ConcObj* channel_recv(MsgChannel* ch) {\n");
+      280:  173:    printf("    pthread_mutex_lock(&ch->mutex);\n");
+      280:  174:    printf("    int head = atomic_load(&ch->head);\n");
+      280:  175:    printf("    int tail = atomic_load(&ch->tail);\n");
+      280:  176:    printf("    while (head == tail) {\n");
+      280:  177:    printf("        if (atomic_load(&ch->closed)) {\n");
+      280:  178:    printf("            pthread_mutex_unlock(&ch->mutex);\n");
+      280:  179:    printf("            return NULL;\n");
+      280:  180:    printf("        }\n");
+      280:  181:    printf("        pthread_cond_wait(&ch->not_empty, &ch->mutex);\n");
+      280:  182:    printf("    }\n");
+      280:  183:    printf("    ConcObj* obj = ch->buffer[head];\n");
+      280:  184:    printf("    // Take ownership: receiver becomes owner\n");
+      280:  185:    printf("    obj->owner_thread = THREAD_ID;\n");
+      280:  186:    printf("    atomic_store(&ch->head, (head + 1) %% ch->capacity);\n");
+      280:  187:    printf("    pthread_cond_signal(&ch->not_full);\n");
+      280:  188:    printf("    pthread_mutex_unlock(&ch->mutex);\n");
+      280:  189:    printf("    return obj;\n");
+      280:  190:    printf("}\n\n");
+        -:  191:
+        -:  192:    // Close channel
+      280:  193:    printf("// Close channel\n");
+      280:  194:    printf("void channel_close(MsgChannel* ch) {\n");
+      280:  195:    printf("    atomic_store(&ch->closed, 1);\n");
+      280:  196:    printf("    pthread_cond_broadcast(&ch->not_empty);\n");
+      280:  197:    printf("    pthread_cond_broadcast(&ch->not_full);\n");
+      280:  198:    printf("}\n\n");
+        -:  199:
+        -:  200:    // Destroy channel
+      280:  201:    printf("// Destroy channel\n");
+      280:  202:    printf("void channel_destroy(MsgChannel* ch) {\n");
+      280:  203:    printf("    pthread_mutex_destroy(&ch->mutex);\n");
+      280:  204:    printf("    pthread_cond_destroy(&ch->not_empty);\n");
+      280:  205:    printf("    pthread_cond_destroy(&ch->not_full);\n");
+      280:  206:    printf("    free(ch->buffer);\n");
+      280:  207:    printf("    free(ch);\n");
+      280:  208:    printf("}\n\n");
+        -:  209:
+        -:  210:    // Thread spawn helper
+      280:  211:    printf("// Thread spawn with ownership semantics\n");
+      280:  212:    printf("typedef struct SpawnArgs {\n");
+      280:  213:    printf("    void* (*fn)(void*);\n");
+      280:  214:    printf("    void* arg;\n");
+      280:  215:    printf("    int thread_id;\n");
+      280:  216:    printf("} SpawnArgs;\n\n");
+        -:  217:
+      280:  218:    printf("static int next_thread_id = 1;\n\n");
+        -:  219:
+      280:  220:    printf("void* thread_wrapper(void* args) {\n");
+      280:  221:    printf("    SpawnArgs* sa = (SpawnArgs*)args;\n");
+      280:  222:    printf("    THREAD_ID = sa->thread_id;\n");
+      280:  223:    printf("    void* result = sa->fn(sa->arg);\n");
+      280:  224:    printf("    free(sa);\n");
+      280:  225:    printf("    return result;\n");
+      280:  226:    printf("}\n\n");
+        -:  227:
+      280:  228:    printf("pthread_t spawn_thread(void* (*fn)(void*), void* arg) {\n");
+      280:  229:    printf("    SpawnArgs* sa = malloc(sizeof(SpawnArgs));\n");
+      280:  230:    printf("    sa->fn = fn;\n");
+      280:  231:    printf("    sa->arg = arg;\n");
+      280:  232:    printf("    sa->thread_id = next_thread_id++;\n");
+      280:  233:    printf("    pthread_t tid;\n");
+      280:  234:    printf("    pthread_create(&tid, NULL, thread_wrapper, sa);\n");
+      280:  235:    printf("    return tid;\n");
+      280:  236:    printf("}\n\n");
+        -:  237:
+        -:  238:    // Freeze for immutable sharing
+      280:  239:    printf("// Freeze object for immutable sharing (no sync needed)\n");
+      280:  240:    printf("void conc_freeze(ConcObj* obj) {\n");
+      280:  241:    printf("    if (!obj) return;\n");
+      280:  242:    printf("    if (obj->is_immutable) return;\n");
+      280:  243:    printf("    obj->is_immutable = 1;\n");
+      280:  244:    printf("    obj->owner_thread = -1;  // Shared\n");
+      280:  245:    printf("    if (obj->is_pair) {\n");
+      280:  246:    printf("        conc_freeze(obj->a);\n");
+      280:  247:    printf("        conc_freeze(obj->b);\n");
+      280:  248:    printf("    }\n");
+      280:  249:    printf("}\n\n");
+      280:  250:}
+        -:  251:
+        -:  252:// Generate atomic RC operations
+    #####:  253:void gen_atomic_rc_ops(void) {
+        -:  254:    // Already included in gen_concurrent_runtime
+    #####:  255:}

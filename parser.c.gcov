@@ -1,0 +1,186 @@
+        -:    0:Source:src/parser/parser.c
+        -:    1:#define _POSIX_C_SOURCE 200809L
+        -:    2:#include "parser.h"
+        -:    3:#include "../eval/eval.h"
+        -:    4:#include <ctype.h>
+        -:    5:#include <string.h>
+        -:    6:#include <stdlib.h>
+        -:    7:
+        -:    8:extern Value* NIL;
+        -:    9:extern Value* SYM_QUOTE;
+        -:   10:
+        -:   11:// -- Parser State --
+        -:   12:
+        -:   13:static const char* parse_ptr = NULL;
+        -:   14:
+       98:   15:void set_parse_input(const char* input) {
+       98:   16:    parse_ptr = input;
+       98:   17:}
+        -:   18:
+        -:   19:// -- Parsing --
+        -:   20:
+      565:   21:void skip_ws(void) {
+      742:   22:    while (parse_ptr && isspace((unsigned char)*parse_ptr)) parse_ptr++;
+      565:   23:}
+        -:   24:
+        -:   25:// Iterative Parser Context Frame
+        -:   26:typedef struct ParseFrame {
+        -:   27:    Value* list;           // Accumulator for list elements (built in reverse)
+        -:   28:    int closing_char;      // ')' or 0 (for quotes)
+        -:   29:    int max_items;         // -1 (unlimited) or N (for quotes)
+        -:   30:    int items_read;        // Number of items read so far
+        -:   31:    struct ParseFrame* next;
+        -:   32:} ParseFrame;
+        -:   33:
+      145:   34:static void push_frame(ParseFrame** stack, Value* initial_list, int closing, int max) {
+      145:   35:    ParseFrame* f = malloc(sizeof(ParseFrame));
+      145:   36:    if (!f) {
+    #####:   37:        fprintf(stderr, "Parser OOM\n");
+    #####:   38:        exit(1);
+        -:   39:    }
+      145:   40:    f->list = initial_list;
+      145:   41:    f->closing_char = closing;
+      145:   42:    f->max_items = max;
+      145:   43:    f->items_read = 0;
+      145:   44:    f->next = *stack;
+      145:   45:    *stack = f;
+      145:   46:}
+        -:   47:
+      145:   48:static ParseFrame* pop_frame(ParseFrame** stack) {
+     145*:   49:    if (!*stack) return NULL;
+      145:   50:    ParseFrame* f = *stack;
+      145:   51:    *stack = f->next;
+      145:   52:    return f;
+        -:   53:}
+        -:   54:
+      145:   55:static Value* reverse_list(Value* list) {
+      145:   56:    Value* new_head = NIL;
+      468:   57:    while (!is_nil(list)) {
+      323:   58:        Value* next = cdr(list);
+      323:   59:        list->cell.cdr = new_head;
+      323:   60:        new_head = list;
+      323:   61:        list = next;
+        -:   62:    }
+      145:   63:    return new_head;
+        -:   64:}
+        -:   65:
+       98:   66:Value* parse(void) {
+       98:   67:    ParseFrame* stack = NULL;
+       98:   68:    Value* current_result = NULL;
+       98:   69:    int result_ready = 0;
+        -:   70:
+        -:   71:    // Main Loop
+        -:   72:    while (1) {
+      565:   73:        skip_ws();
+      565:   74:        if (!parse_ptr || *parse_ptr == '\0') break;
+        -:   75:
+        -:   76:        // Check if current frame is done (for max_items frames like Quote)
+      565:   77:        if (stack && stack->max_items != -1 && stack->items_read >= stack->max_items) {
+        -:   78:            // Frame finished
+        1:   79:            current_result = reverse_list(stack->list);
+        1:   80:            ParseFrame* f = pop_frame(&stack);
+        1:   81:            free(f);
+        1:   82:            result_ready = 1;
+        -:   83:        } 
+        -:   84:        // Check for closing parenthesis (only if frame expects it)
+      564:   85:        else if (stack && stack->closing_char && *parse_ptr == stack->closing_char) {
+      144:   86:            parse_ptr++; // Consume ')'
+      144:   87:            current_result = reverse_list(stack->list);
+      144:   88:            ParseFrame* f = pop_frame(&stack);
+      144:   89:            free(f);
+      144:   90:            result_ready = 1;
+        -:   91:        }
+        -:   92:        else {
+        -:   93:            // Need to read next item
+      420:   94:            if (*parse_ptr == '(') {
+      144:   95:                parse_ptr++;
+      144:   96:                push_frame(&stack, NIL, ')', -1);
+      144:   97:                continue;
+        -:   98:            }
+      276:   99:            else if (*parse_ptr == '\'') {
+        1:  100:                parse_ptr++;
+        -:  101:                // Quote expands to (quote <next>)
+        -:  102:                // We create a list (quote) and expect 1 more item
+       1*:  103:                Value* q = mk_cell(SYM_QUOTE ? SYM_QUOTE : mk_sym("quote"), NIL);
+        1:  104:                push_frame(&stack, q, 0, 1);
+        1:  105:                continue;
+        -:  106:            }
+      275:  107:            else if (*parse_ptr == ')') {
+        -:  108:                // Unexpected closing parenthesis (if stack empty or mismatch)
+    #####:  109:                if (!stack) {
+    #####:  110:                    parse_ptr++;
+    #####:  111:                    return NIL; // Or error? Original parser returned NIL
+        -:  112:                }
+        -:  113:                // If mismatch, we let the closing check above handle it or consume loop
+        -:  114:                // But wait, the check above only fires if closing_char matches.
+        -:  115:                // If we are in a quote frame (closing=0) and see ')', we should close the quote frame?
+        -:  116:                // No, quote expects exactly 1 item. ) is not an item.
+        -:  117:                // This implies malformed input: ' )
+        -:  118:                // Original parser behavior on ')': return NIL.
+        -:  119:                // We should probably just break or return NIL if we see unexpected )
+        -:  120:                // But let's assume valid input for now or minimal error handling.
+    #####:  121:                 if (stack && stack->closing_char != ')') {
+        -:  122:                    // We are in a quote or limited frame, but hit ')'.
+        -:  123:                    // This means the quote ended early?
+        -:  124:                    // e.g. (list ' )
+        -:  125:                    // The ' expects an atom or list. ) ends the outer list.
+        -:  126:                    // This is invalid.
+        -:  127:                    // Let's just consume it and let the outer frame handle it.
+        -:  128:                    // But we can't consume it here if it belongs to outer.
+        -:  129:                    
+        -:  130:                    // Actually, if we see ')' and we are expecting an item (Quote), it's an error.
+        -:  131:                    // But to be robust, maybe we just close the quote frame as is?
+    #####:  132:                    current_result = reverse_list(stack->list);
+    #####:  133:                    ParseFrame* f = pop_frame(&stack);
+    #####:  134:                    free(f);
+    #####:  135:                    result_ready = 1;
+        -:  136:                    // Don't consume ')' yet, let next loop iteration handle it for parent
+        -:  137:                 } else {
+        -:  138:                     // Should be handled by closing check above
+        -:  139:                     // If we are here, stack->closing_char != ')' or something.
+    #####:  140:                     parse_ptr++;
+    #####:  141:                     return NIL;
+        -:  142:                 }
+        -:  143:            }
+        -:  144:            else {
+        -:  145:                // Atom (int or sym)
+      388:  146:                if (isdigit((unsigned char)*parse_ptr) || (*parse_ptr == '-' && isdigit((unsigned char)parse_ptr[1]))) {
+      113:  147:                    long i = strtol(parse_ptr, (char**)&parse_ptr, 10);
+      113:  148:                    current_result = mk_int(i);
+        -:  149:                } else {
+      162:  150:                    const char* start = parse_ptr;
+      652:  151:                    while (*parse_ptr && !isspace((unsigned char)*parse_ptr) && *parse_ptr != ')' && *parse_ptr != '(') {
+      490:  152:                        parse_ptr++;
+        -:  153:                    }
+      162:  154:                    char* s = strndup(start, parse_ptr - start);
+      162:  155:                    current_result = mk_sym(s);
+      162:  156:                    free(s);
+        -:  157:                }
+      275:  158:                result_ready = 1;
+        -:  159:            }
+        -:  160:        }
+        -:  161:
+        -:  162:        // If we produced a result, append to stack or return
+      420:  163:        if (result_ready) {
+      420:  164:            result_ready = 0;
+      420:  165:            if (!stack) {
+       98:  166:                return current_result;
+        -:  167:            } else {
+      322:  168:                stack->list = mk_cell(current_result, stack->list);
+      322:  169:                stack->items_read++;
+      322:  170:                current_result = NULL;
+        -:  171:            }
+        -:  172:        }
+        -:  173:    }
+        -:  174:
+    #####:  175:    return NULL;
+        -:  176:}
+        -:  177:
+        -:  178:// Deprecated recursion entry point (kept for header compat if needed, but parse() covers it)
+    #####:  179:Value* parse_list(void) {
+    #####:  180:    if (*parse_ptr == '(') {
+    #####:  181:        parse_ptr++;
+    #####:  182:        return parse(); // parse now handles the loop
+        -:  183:    }
+    #####:  184:    return NIL;
+        -:  185:}

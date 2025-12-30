@@ -131,7 +131,8 @@ void ds_append_int(DString* ds, long i) {
     if (!ds) return;
     char buf[32];
     int len = snprintf(buf, sizeof(buf), "%ld", i);
-    ds_append_len(ds, buf, len);
+    if (len < 0 || (size_t)len >= sizeof(buf)) return;  // Error or truncation
+    ds_append_len(ds, buf, (size_t)len);
 }
 
 // Printf-style append
@@ -151,12 +152,13 @@ void ds_printf(DString* ds, const char* fmt, ...) {
         return;
     }
 
-    if (!ds_ensure_capacity(ds, ds->len + needed + 1)) {
+    size_t needed_sz = (size_t)needed;
+    if (!ds_ensure_capacity(ds, ds->len + needed_sz + 1)) {
         va_end(args_copy);
         return;  // Allocation failed
     }
 
-    vsnprintf(ds->data + ds->len, needed + 1, fmt, args_copy);
-    ds->len += needed;
+    vsnprintf(ds->data + ds->len, needed_sz + 1, fmt, args_copy);
+    ds->len += needed_sz;
     va_end(args_copy);
 }

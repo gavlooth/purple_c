@@ -1,0 +1,236 @@
+        -:    0:Source:src/types.c
+        -:    1:#define _POSIX_C_SOURCE 200809L
+        -:    2:#include "types.h"
+        -:    3:#include "util/dstring.h"
+        -:    4:#include <string.h>
+        -:    5:
+        -:    6:// -- Compiler Arena (Phase 12) --
+        -:    7:// Global arena for all compiler-phase allocations
+        -:    8:
+        -:    9:typedef struct ArenaBlock {
+        -:   10:    char* memory;
+        -:   11:    size_t size;
+        -:   12:    size_t used;
+        -:   13:    struct ArenaBlock* next;
+        -:   14:} ArenaBlock;
+        -:   15:
+        -:   16:typedef struct StringNode {
+        -:   17:    char* s;
+        -:   18:    struct StringNode* next;
+        -:   19:} StringNode;
+        -:   20:
+        -:   21:static ArenaBlock* compiler_arena_blocks = NULL;
+        -:   22:static ArenaBlock* compiler_arena_current = NULL;
+        -:   23:static StringNode* compiler_strings = NULL;
+        -:   24:static size_t compiler_arena_block_size = 65536;  // 64KB blocks
+        -:   25:
+      280:   26:void compiler_arena_init(void) {
+      280:   27:    compiler_arena_blocks = NULL;
+      280:   28:    compiler_arena_current = NULL;
+      280:   29:    compiler_strings = NULL;
+      280:   30:}
+        -:   31:
+    #####:   32:static void* compiler_arena_alloc(size_t size) {
+        -:   33:    // Align to 8 bytes
+    #####:   34:    size = (size + 7) & ~7;
+        -:   35:
+    #####:   36:    if (!compiler_arena_current || compiler_arena_current->used + size > compiler_arena_current->size) {
+        -:   37:        // Need new block
+    #####:   38:        size_t bs = compiler_arena_block_size;
+    #####:   39:        if (size > bs) bs = size;
+        -:   40:
+    #####:   41:        ArenaBlock* b = malloc(sizeof(ArenaBlock));
+    #####:   42:        if (!b) return NULL;
+    #####:   43:        b->memory = malloc(bs);
+    #####:   44:        if (!b->memory) {
+    #####:   45:            free(b);
+    #####:   46:            return NULL;
+        -:   47:        }
+    #####:   48:        b->size = bs;
+    #####:   49:        b->used = 0;
+    #####:   50:        b->next = compiler_arena_blocks;
+    #####:   51:        compiler_arena_blocks = b;
+    #####:   52:        compiler_arena_current = b;
+        -:   53:    }
+        -:   54:
+    #####:   55:    void* ptr = compiler_arena_current->memory + compiler_arena_current->used;
+    #####:   56:    compiler_arena_current->used += size;
+    #####:   57:    return ptr;
+        -:   58:}
+        -:   59:
+    #####:   60:void compiler_arena_register_string(char* s) {
+    #####:   61:    if (!s) return;
+    #####:   62:    StringNode* node = malloc(sizeof(StringNode));
+    #####:   63:    if (!node) return;
+    #####:   64:    node->s = s;
+    #####:   65:    node->next = compiler_strings;
+    #####:   66:    compiler_strings = node;
+        -:   67:}
+        -:   68:
+      280:   69:void compiler_arena_cleanup(void) {
+        -:   70:    // Free all strings
+      280:   71:    StringNode* sn = compiler_strings;
+      280:   72:    while (sn) {
+    #####:   73:        StringNode* next = sn->next;
+    #####:   74:        free(sn->s);
+    #####:   75:        free(sn);
+    #####:   76:        sn = next;
+        -:   77:    }
+      280:   78:    compiler_strings = NULL;
+        -:   79:
+        -:   80:    // Free all arena blocks
+      280:   81:    ArenaBlock* b = compiler_arena_blocks;
+      280:   82:    while (b) {
+    #####:   83:        ArenaBlock* next = b->next;
+    #####:   84:        free(b->memory);
+    #####:   85:        free(b);
+    #####:   86:        b = next;
+        -:   87:    }
+      280:   88:    compiler_arena_blocks = NULL;
+      280:   89:    compiler_arena_current = NULL;
+      280:   90:}
+        -:   91:
+        -:   92:// -- Value Constructors --
+        -:   93:
+    28737:   94:Value* alloc_val(Tag tag) {
+        -:   95:    Value* v;
+    28737:   96:    if (compiler_arena_current) {
+    #####:   97:        v = compiler_arena_alloc(sizeof(Value));
+        -:   98:    } else {
+    28737:   99:        v = malloc(sizeof(Value));
+        -:  100:    }
+   28737*:  101:    if (!v) return NULL;
+    28737:  102:    v->tag = tag;
+    28737:  103:    return v;
+        -:  104:}
+        -:  105:
+      368:  106:Value* mk_int(long i) {
+      368:  107:    Value* v = alloc_val(T_INT);
+     368*:  108:    if (!v) return NULL;
+      368:  109:    v->i = i;
+      368:  110:    return v;
+        -:  111:}
+        -:  112:
+     9986:  113:Value* mk_sym(const char* s) {
+     9986:  114:    Value* v = alloc_val(T_SYM);
+    9986*:  115:    if (!v) return NULL;
+    9986*:  116:    v->s = s ? strdup(s) : NULL;
+     9986:  117:    if (s && !v->s) {
+        -:  118:        // Don't free v if using arena (arena will bulk free)
+    #####:  119:        if (!compiler_arena_current) free(v);
+    #####:  120:        return NULL;
+        -:  121:    }
+     9986:  122:    if (v->s && compiler_arena_current) {
+    #####:  123:        compiler_arena_register_string(v->s);
+        -:  124:    }
+     9986:  125:    return v;
+        -:  126:}
+        -:  127:
+    12467:  128:Value* mk_cell(Value* car, Value* cdr) {
+    12467:  129:    Value* v = alloc_val(T_CELL);
+   12467*:  130:    if (!v) return NULL;
+    12467:  131:    v->cell.car = car;
+    12467:  132:    v->cell.cdr = cdr;
+    12467:  133:    return v;
+        -:  134:}
+        -:  135:
+     5040:  136:Value* mk_prim(PrimFn fn) {
+     5040:  137:    Value* v = alloc_val(T_PRIM);
+    5040*:  138:    if (!v) return NULL;
+     5040:  139:    v->prim = fn;
+     5040:  140:    return v;
+        -:  141:}
+        -:  142:
+      272:  143:Value* mk_code(const char* s) {
+      272:  144:    Value* v = alloc_val(T_CODE);
+     272*:  145:    if (!v) return NULL;
+     272*:  146:    v->s = s ? strdup(s) : NULL;
+      272:  147:    if (s && !v->s) {
+        -:  148:        // Don't free v if using arena (arena will bulk free)
+    #####:  149:        if (!compiler_arena_current) free(v);
+    #####:  150:        return NULL;
+        -:  151:    }
+      272:  152:    if (v->s && compiler_arena_current) {
+    #####:  153:        compiler_arena_register_string(v->s);
+        -:  154:    }
+      272:  155:    return v;
+        -:  156:}
+        -:  157:
+        6:  158:Value* mk_lambda(Value* params, Value* body, Value* env) {
+        6:  159:    Value* v = alloc_val(T_LAMBDA);
+       6*:  160:    if (!v) return NULL;
+        6:  161:    v->lam.params = params;
+        6:  162:    v->lam.body = body;
+        6:  163:    v->lam.env = env;
+        6:  164:    return v;
+        -:  165:}
+        -:  166:
+        -:  167:// -- Value Helpers --
+        -:  168:
+     4645:  169:int is_nil(Value* v) {
+     4645:  170:    return v == NULL || v->tag == T_NIL;
+        -:  171:}
+        -:  172:
+      251:  173:int is_code(Value* v) {
+      251:  174:    return v && v->tag == T_CODE;
+        -:  175:}
+        -:  176:
+     6194:  177:Value* car(Value* v) {
+    6194*:  178:    return (v && v->tag == T_CELL) ? v->cell.car : NULL;
+        -:  179:}
+        -:  180:
+     3876:  181:Value* cdr(Value* v) {
+    3876*:  182:    return (v && v->tag == T_CELL) ? v->cell.cdr : NULL;
+        -:  183:}
+        -:  184:
+     4490:  185:int sym_eq(Value* s1, Value* s2) {
+    4490*:  186:    if (!s1 || !s2) return 0;
+    4490*:  187:    if (s1->tag != T_SYM || s2->tag != T_SYM) return 0;
+     4490:  188:    return strcmp(s1->s, s2->s) == 0;
+        -:  189:}
+        -:  190:
+    #####:  191:int sym_eq_str(Value* s1, const char* s2) {
+    #####:  192:    if (!s1 || s1->tag != T_SYM) return 0;
+    #####:  193:    return strcmp(s1->s, s2) == 0;
+        -:  194:}
+        -:  195:
+    #####:  196:char* list_to_str(Value* v) {
+    #####:  197:    DString* ds = ds_new();
+    #####:  198:    ds_append_char(ds, '(');
+    #####:  199:    while (v && !is_nil(v)) {
+    #####:  200:        char* s = val_to_str(car(v));
+    #####:  201:        ds_append(ds, s);
+    #####:  202:        free(s);
+    #####:  203:        v = cdr(v);
+    #####:  204:        if (v && !is_nil(v)) ds_append_char(ds, ' ');
+        -:  205:    }
+    #####:  206:    ds_append_char(ds, ')');
+    #####:  207:    return ds_take(ds);
+        -:  208:}
+        -:  209:
+      286:  210:char* val_to_str(Value* v) {
+     286*:  211:    if (!v) return strdup("NULL");
+        -:  212:    DString* ds;
+      286:  213:    switch (v->tag) {
+       33:  214:        case T_INT:
+       33:  215:            ds = ds_new();
+       33:  216:            ds_append_int(ds, v->i);
+       33:  217:            return ds_take(ds);
+       30:  218:        case T_SYM:
+       30:  219:            return strdup(v->s);
+      217:  220:        case T_CODE:
+      217:  221:            return strdup(v->s);
+    #####:  222:        case T_CELL:
+    #####:  223:            return list_to_str(v);
+        3:  224:        case T_NIL:
+        3:  225:            return strdup("()");
+    #####:  226:        case T_PRIM:
+    #####:  227:            return strdup("#<prim>");
+        3:  228:        case T_LAMBDA:
+        3:  229:            return strdup("#<lambda>");
+    #####:  230:        case T_MENV:
+    #####:  231:            return strdup("#<menv>");
+    #####:  232:        default:
+    #####:  233:            return strdup("?");
+        -:  234:    }
+        -:  235:}

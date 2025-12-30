@@ -120,7 +120,7 @@ void analyze_shapes_expr(Value* expr, ShapeContext* ctx) {
             Value* op = car(expr);
             Value* args = cdr(expr);
 
-            if (op->tag == T_SYM) {
+            if (op && op->tag == T_SYM) {
                 // CONS creates tree structure (unless aliased args)
                 if (strcmp(op->s, "cons") == 0) {
                     Value* car_arg = car(args);
@@ -158,7 +158,9 @@ void analyze_shapes_expr(Value* expr, ShapeContext* ctx) {
                         Value* val_expr = car(cdr(bind));
 
                         analyze_shapes_expr(val_expr, ctx);
-                        add_shape(ctx, sym->s, ctx->result_shape);
+                        if (sym && sym->tag == T_SYM) {
+                            add_shape(ctx, sym->s, ctx->result_shape);
+                        }
 
                         bindings = cdr(bindings);
                     }
@@ -177,7 +179,9 @@ void analyze_shapes_expr(Value* expr, ShapeContext* ctx) {
                     while (!is_nil(b)) {
                         Value* bind = car(b);
                         Value* sym = car(bind);
-                        add_shape(ctx, sym->s, SHAPE_CYCLIC);
+                        if (sym && sym->tag == T_SYM) {
+                            add_shape(ctx, sym->s, SHAPE_CYCLIC);
+                        }
                         b = cdr(b);
                     }
 
@@ -189,7 +193,9 @@ void analyze_shapes_expr(Value* expr, ShapeContext* ctx) {
                         Value* val_expr = car(cdr(bind));
 
                         analyze_shapes_expr(val_expr, ctx);
-                        add_shape(ctx, sym->s, ctx->result_shape);
+                        if (sym && sym->tag == T_SYM) {
+                            add_shape(ctx, sym->s, ctx->result_shape);
+                        }
 
                         b = cdr(b);
                     }
@@ -201,7 +207,7 @@ void analyze_shapes_expr(Value* expr, ShapeContext* ctx) {
                 // SET! can create cycles
                 if (strcmp(op->s, "set!") == 0) {
                     Value* target = car(args);
-                    if (target->tag == T_SYM) {
+                    if (target && target->tag == T_SYM) {
                         add_shape(ctx, target->s, SHAPE_CYCLIC);
                     }
                     ctx->result_shape = SHAPE_CYCLIC;

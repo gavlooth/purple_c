@@ -1,0 +1,563 @@
+        -:    0:Source:src/codegen/codegen.c
+        -:    1:#include "codegen.h"
+        -:    2:#include "../memory/scc.h"
+        -:    3:#include "../memory/deferred.h"
+        -:    4:#include "../util/dstring.h"
+        -:    5:#include <stdio.h>
+        -:    6:#include <string.h>
+        -:    7:
+        -:    8:// -- Globals --
+        -:    9:TypeDef* TYPE_REGISTRY = NULL;
+        -:   10:OwnershipEdge* OWNERSHIP_GRAPH = NULL;
+        -:   11:
+        -:   12:// Visit states for DFS
+        -:   13:typedef struct VisitState {
+        -:   14:    char* type_name;
+        -:   15:    int color;  // 0=white, 1=gray, 2=black
+        -:   16:    struct VisitState* next;
+        -:   17:} VisitState;
+        -:   18:
+        -:   19:static VisitState* VISIT_STATES = NULL;
+        -:   20:
+        -:   21:// -- Code Emission --
+        -:   22:
+        4:   23:Value* emit_c_call(const char* fn, Value* a, Value* b) {
+        4:   24:    char* sa = (a->tag == T_CODE) ? a->s : val_to_str(a);
+       4*:   25:    char* sb = (b->tag == T_CODE) ? b->s : val_to_str(b);
+        -:   26:
+        4:   27:    DString* ca = ds_new();
+        4:   28:    DString* cb = ds_new();
+        -:   29:
+        4:   30:    if (a->tag == T_INT) ds_printf(ca, "mk_int(%ld)", a->i);
+        3:   31:    else ds_append(ca, sa);
+        -:   32:
+       4*:   33:    if (b->tag == T_INT) ds_printf(cb, "mk_int(%ld)", b->i);
+        4:   34:    else ds_append(cb, sb);
+        -:   35:
+        4:   36:    DString* ds = ds_new();
+        4:   37:    ds_printf(ds, "%s(%s, %s)", fn, ds_cstr(ca), ds_cstr(cb));
+        -:   38:
+        4:   39:    if (a->tag != T_CODE) free(sa);
+       4*:   40:    if (b->tag != T_CODE) free(sb);
+        -:   41:
+        4:   42:    ds_free(ca);
+        4:   43:    ds_free(cb);
+        4:   44:    return mk_code(ds_take(ds));
+        -:   45:}
+        -:   46:
+       80:   47:Value* lift_value(Value* v) {
+      80*:   48:    if (v->tag == T_CODE) return v;
+       80:   49:    if (v->tag == T_INT) {
+       80:   50:        DString* ds = ds_new();
+       80:   51:        ds_printf(ds, "mk_int(%ld)", v->i);
+       80:   52:        return mk_code(ds_take(ds));
+        -:   53:    }
+    #####:   54:    return v;
+        -:   55:}
+        -:   56:
+        -:   57:// -- ASAP Scanner Generation --
+        -:   58:
+       98:   59:void gen_asap_scanner(const char* type_name, int is_list) {
+       98:   60:    printf("\n// [ASAP] Type-Aware Scanner for %s\n", type_name);
+       98:   61:    printf("// Note: ASAP uses compile-time free injection, not runtime GC\n");
+       98:   62:    printf("void scan_%s(Obj* x) {\n", type_name);
+       98:   63:    printf("  if (!x || x->scan_tag) return;\n");
+       98:   64:    printf("  x->scan_tag = 1;\n");
+       98:   65:    if (is_list) {
+       98:   66:        printf("  scan_%s(x->a);\n", type_name);
+       98:   67:        printf("  scan_%s(x->b);\n", type_name);
+        -:   68:    }
+       98:   69:    printf("}\n\n");
+        -:   70:
+       98:   71:    printf("void clear_marks_%s(Obj* x) {\n", type_name);
+       98:   72:    printf("  if (!x || !x->scan_tag) return;\n");
+       98:   73:    printf("  x->scan_tag = 0;\n");
+       98:   74:    if (is_list) {
+       98:   75:        printf("  clear_marks_%s(x->a);\n", type_name);
+       98:   76:        printf("  clear_marks_%s(x->b);\n", type_name);
+        -:   77:    }
+       98:   78:    printf("}\n");
+       98:   79:}
+        -:   80:
+        -:   81:// -- Type Registry --
+        -:   82:
+      294:   83:void register_type(const char* name, TypeField* fields, int count) {
+     294*:   84:    if (!name) return;
+      294:   85:    TypeDef* t = malloc(sizeof(TypeDef));
+     294*:   86:    if (!t) return;
+      294:   87:    t->name = strdup(name);
+      294:   88:    if (!t->name) {
+    #####:   89:        free(t);
+    #####:   90:        return;
+        -:   91:    }
+      294:   92:    t->fields = fields;
+      294:   93:    t->field_count = count;
+      294:   94:    t->is_recursive = 0;
+      294:   95:    t->next = TYPE_REGISTRY;
+      294:   96:    TYPE_REGISTRY = t;
+        -:   97:
+      980:   98:    for (int i = 0; i < count; i++) {
+      686:   99:        if (fields[i].is_scannable) {
+      588:  100:            fields[i].strength = FIELD_STRONG;
+      588:  101:            if (strcmp(fields[i].type, name) == 0) {
+      392:  102:                t->is_recursive = 1;
+        -:  103:            }
+        -:  104:        } else {
+       98:  105:            fields[i].strength = FIELD_UNTRACED;
+        -:  106:        }
+        -:  107:    }
+        -:  108:}
+        -:  109:
+      392:  110:TypeDef* find_type(const char* name) {
+      392:  111:    TypeDef* t = TYPE_REGISTRY;
+      588:  112:    while (t) {
+      588:  113:        if (strcmp(t->name, name) == 0) return t;
+      196:  114:        t = t->next;
+        -:  115:    }
+    #####:  116:    return NULL;
+        -:  117:}
+        -:  118:
+        -:  119:// -- Ownership Graph --
+        -:  120:
+       98:  121:void build_ownership_graph(void) {
+       98:  122:    TypeDef* t = TYPE_REGISTRY;
+      392:  123:    while (t) {
+      980:  124:        for (int i = 0; i < t->field_count; i++) {
+      686:  125:            if (t->fields[i].is_scannable) {
+      588:  126:                OwnershipEdge* e = malloc(sizeof(OwnershipEdge));
+     588*:  127:                if (!e) continue;
+      588:  128:                e->from_type = strdup(t->name);
+      588:  129:                e->field_name = strdup(t->fields[i].name);
+      588:  130:                e->to_type = strdup(t->fields[i].type);
+     588*:  131:                if (!e->from_type || !e->field_name || !e->to_type) {
+    #####:  132:                    free(e->from_type);
+    #####:  133:                    free(e->field_name);
+    #####:  134:                    free(e->to_type);
+    #####:  135:                    free(e);
+    #####:  136:                    continue;
+        -:  137:                }
+      588:  138:                e->is_back_edge = 0;
+      588:  139:                e->next = OWNERSHIP_GRAPH;
+      588:  140:                OWNERSHIP_GRAPH = e;
+        -:  141:            }
+        -:  142:        }
+      294:  143:        t = t->next;
+        -:  144:    }
+       98:  145:}
+        -:  146:
+     1960:  147:static VisitState* find_visit_state(const char* name) {
+     1960:  148:    VisitState* v = VISIT_STATES;
+     3528:  149:    while (v) {
+     2450:  150:        if (strcmp(v->type_name, name) == 0) return v;
+     1568:  151:        v = v->next;
+        -:  152:    }
+     1078:  153:    return NULL;
+        -:  154:}
+        -:  155:
+      784:  156:static void add_visit_state(const char* name, int color) {
+      784:  157:    VisitState* existing = find_visit_state(name);
+      784:  158:    if (existing) {
+      392:  159:        existing->color = color;
+      392:  160:        return;
+        -:  161:    }
+      392:  162:    VisitState* v = malloc(sizeof(VisitState));
+     392*:  163:    if (!v) return;
+      392:  164:    v->type_name = strdup(name);
+      392:  165:    if (!v->type_name) {
+    #####:  166:        free(v);
+    #####:  167:        return;
+        -:  168:    }
+      392:  169:    v->color = color;
+      392:  170:    v->next = VISIT_STATES;
+      392:  171:    VISIT_STATES = v;
+        -:  172:}
+        -:  173:
+      392:  174:static void mark_field_weak(const char* type_name, const char* field_name) {
+      392:  175:    TypeDef* t = find_type(type_name);
+     392*:  176:    if (!t) return;
+        -:  177:
+      588:  178:    for (int i = 0; i < t->field_count; i++) {
+      588:  179:        if (strcmp(t->fields[i].name, field_name) == 0) {
+      392:  180:            t->fields[i].strength = FIELD_WEAK;
+      392:  181:            printf("// AUTO-WEAK: %s.%s\n", type_name, field_name);
+      392:  182:            return;
+        -:  183:        }
+        -:  184:    }
+        -:  185:}
+        -:  186:
+      882:  187:static void detect_back_edges_dfs(const char* type_name, const char*** path, int* path_len, int* path_cap) {
+      882:  188:    VisitState* v = find_visit_state(type_name);
+        -:  189:
+      882:  190:    if (v && v->color == 1) return;
+      490:  191:    if (v && v->color == 2) return;
+        -:  192:
+      392:  193:    add_visit_state(type_name, 1);
+        -:  194:
+        -:  195:    // Ensure path capacity
+      392:  196:    if (*path_len >= *path_cap) {
+    #####:  197:        *path_cap *= 2;
+    #####:  198:        *path = realloc(*path, (*path_cap) * sizeof(char*));
+    #####:  199:        if (!*path) return; // Allocation failed
+        -:  200:    }
+        -:  201:
+      392:  202:    (*path)[*path_len] = type_name;
+      392:  203:    (*path_len)++;
+        -:  204:
+      392:  205:    OwnershipEdge* e = OWNERSHIP_GRAPH;
+     2744:  206:    while (e) {
+     2352:  207:        if (strcmp(e->from_type, type_name) == 0) {
+     1176:  208:            for (int i = 0; i < *path_len; i++) {
+      588:  209:                if (strcmp((*path)[i], e->to_type) == 0) {
+      392:  210:                    e->is_back_edge = 1;
+      392:  211:                    mark_field_weak(e->from_type, e->field_name);
+        -:  212:                }
+        -:  213:            }
+      588:  214:            detect_back_edges_dfs(e->to_type, path, path_len, path_cap);
+        -:  215:        }
+     2352:  216:        e = e->next;
+        -:  217:    }
+        -:  218:
+      392:  219:    (*path_len)--;
+      392:  220:    add_visit_state(type_name, 2);
+        -:  221:}
+        -:  222:
+       98:  223:void analyze_back_edges(void) {
+       98:  224:    int path_cap = 256;
+       98:  225:    int path_len = 0;
+       98:  226:    const char** path = malloc(path_cap * sizeof(char*));
+      98*:  227:    if (!path) return;
+        -:  228:
+       98:  229:    VISIT_STATES = NULL;
+        -:  230:
+       98:  231:    TypeDef* t = TYPE_REGISTRY;
+      392:  232:    while (t) {
+      294:  233:        if (find_visit_state(t->name) == NULL) {
+      294:  234:            detect_back_edges_dfs(t->name, &path, &path_len, &path_cap);
+        -:  235:        }
+      294:  236:        t = t->next;
+        -:  237:    }
+        -:  238:
+       98:  239:    free(path);
+        -:  240:}
+        -:  241:
+        -:  242:// -- Field-Aware Scanner --
+        -:  243:
+    #####:  244:void gen_field_aware_scanner(const char* type_name) {
+    #####:  245:    TypeDef* t = find_type(type_name);
+    #####:  246:    if (!t) {
+    #####:  247:        gen_asap_scanner(type_name, 1);
+    #####:  248:        return;
+        -:  249:    }
+        -:  250:
+    #####:  251:    printf("\n// [ASAP] Field-Aware Scanner for %s\n", type_name);
+    #####:  252:    printf("void scan_%s(%s* x) {\n", type_name, type_name);
+    #####:  253:    printf("  if (!x || x->scan_tag) return;\n");
+    #####:  254:    printf("  x->scan_tag = 1;\n");
+        -:  255:
+    #####:  256:    for (int i = 0; i < t->field_count; i++) {
+    #####:  257:        if (t->fields[i].is_scannable) {
+    #####:  258:            printf("  scan_%s(x->%s);\n", t->fields[i].type, t->fields[i].name);
+        -:  259:        }
+        -:  260:    }
+        -:  261:
+    #####:  262:    printf("}\n");
+        -:  263:}
+        -:  264:
+        -:  265:// -- Struct Generation --
+        -:  266:
+    #####:  267:void gen_struct_def(TypeDef* t) {
+    #####:  268:    printf("typedef struct %s {\n", t->name);
+    #####:  269:    printf("    int _rc;\n");
+    #####:  270:    printf("    int _weak_rc;\n");
+    #####:  271:    printf("    unsigned int scan_tag; // Scanner mark\n");
+        -:  272:
+    #####:  273:    for (int i = 0; i < t->field_count; i++) {
+    #####:  274:        if (t->fields[i].is_scannable) {
+    #####:  275:            if (t->fields[i].strength == FIELD_WEAK) {
+    #####:  276:                printf("    WeakRef* %s;  // WEAK\n", t->fields[i].name);
+        -:  277:            } else {
+    #####:  278:                printf("    struct %s* %s;  // STRONG\n",
+    #####:  279:                       t->fields[i].type, t->fields[i].name);
+        -:  280:            }
+        -:  281:        } else {
+    #####:  282:            printf("    int %s;  // VALUE\n", t->fields[i].name);
+        -:  283:        }
+        -:  284:    }
+        -:  285:
+    #####:  286:    printf("} %s;\n\n", t->name);
+    #####:  287:}
+        -:  288:
+    #####:  289:void gen_release_func(TypeDef* t) {
+    #####:  290:    printf("void release_%s(%s* obj) {\n", t->name, t->name);
+    #####:  291:    printf("    if (!obj) return;\n");
+    #####:  292:    printf("    obj->_rc--;\n");
+    #####:  293:    printf("    if (obj->_rc == 0) {\n");
+        -:  294:
+    #####:  295:    for (int i = 0; i < t->field_count; i++) {
+    #####:  296:        if (t->fields[i].is_scannable && t->fields[i].strength == FIELD_STRONG) {
+    #####:  297:            printf("        release_%s(obj->%s);\n", t->fields[i].type, t->fields[i].name);
+        -:  298:        }
+        -:  299:    }
+        -:  300:
+    #####:  301:    printf("        if (obj->_weak_rc == 0) {\n");
+    #####:  302:    printf("            free(obj);\n");
+    #####:  303:    printf("        } else {\n");
+    #####:  304:    printf("            obj->_rc = -1;\n");
+    #####:  305:    printf("        }\n");
+    #####:  306:    printf("    }\n");
+    #####:  307:    printf("}\n\n");
+    #####:  308:}
+        -:  309:
+        -:  310:// -- Weak Reference Runtime --
+        -:  311:
+       98:  312:void gen_weak_ref_runtime(void) {
+       98:  313:    printf("// Phase 3: Weak Reference Support\n");
+       98:  314:    printf("typedef struct WeakRef {\n");
+       98:  315:    printf("    void* target;\n");
+       98:  316:    printf("    int alive;\n");
+       98:  317:    printf("} WeakRef;\n\n");
+        -:  318:
+       98:  319:    printf("typedef struct WeakRefNode {\n");
+       98:  320:    printf("    WeakRef* ref;\n");
+       98:  321:    printf("    struct WeakRefNode* next;\n");
+       98:  322:    printf("} WeakRefNode;\n\n");
+        -:  323:
+       98:  324:    printf("WeakRefNode* WEAK_REF_HEAD = NULL;\n\n");
+        -:  325:
+       98:  326:    printf("WeakRef* mk_weak_ref(void* target) {\n");
+       98:  327:    printf("    WeakRef* w = malloc(sizeof(WeakRef));\n");
+       98:  328:    printf("    w->target = target;\n");
+       98:  329:    printf("    w->alive = 1;\n");
+       98:  330:    printf("    WeakRefNode* node = malloc(sizeof(WeakRefNode));\n");
+       98:  331:    printf("    node->ref = w;\n");
+       98:  332:    printf("    node->next = WEAK_REF_HEAD;\n");
+       98:  333:    printf("    WEAK_REF_HEAD = node;\n");
+       98:  334:    printf("    return w;\n");
+       98:  335:    printf("}\n\n");
+        -:  336:
+       98:  337:    printf("void* deref_weak(WeakRef* w) {\n");
+       98:  338:    printf("    if (w && w->alive) return w->target;\n");
+       98:  339:    printf("    return NULL;\n");
+       98:  340:    printf("}\n\n");
+        -:  341:
+       98:  342:    printf("void invalidate_weak(WeakRef* w) {\n");
+       98:  343:    printf("    if (w) w->alive = 0;\n");
+       98:  344:    printf("}\n\n");
+        -:  345:
+       98:  346:    printf("void invalidate_weak_refs_for(void* target) {\n");
+       98:  347:    printf("    WeakRefNode* n = WEAK_REF_HEAD;\n");
+       98:  348:    printf("    while (n) {\n");
+       98:  349:    printf("        WeakRef* obj = n->ref;\n");
+       98:  350:    printf("        if (obj->target == target) {\n");
+       98:  351:    printf("            invalidate_weak(obj);\n");
+       98:  352:    printf("        }\n");
+       98:  353:    printf("        n = n->next;\n");
+       98:  354:    printf("    }\n");
+       98:  355:    printf("}\n\n");
+       98:  356:}
+        -:  357:
+        -:  358:// -- Perceus Runtime --
+        -:  359:
+       98:  360:void gen_perceus_runtime(void) {
+       98:  361:    printf("// Phase 4: Perceus Reuse Analysis Runtime\n\n");
+        -:  362:
+       98:  363:    printf("Obj* try_reuse(Obj* old, size_t size) {\n");
+       98:  364:    printf("    if (old && old->mark == 1) {\n");
+       98:  365:    printf("        // Reusing: release children if this was a pair\n");
+       98:  366:    printf("        if (old->is_pair) {\n");
+       98:  367:    printf("            if (old->a) dec_ref(old->a);\n");
+       98:  368:    printf("            if (old->b) dec_ref(old->b);\n");
+       98:  369:    printf("            old->a = NULL;\n");
+       98:  370:    printf("            old->b = NULL;\n");
+       98:  371:    printf("        }\n");
+       98:  372:    printf("        return old;\n");
+       98:  373:    printf("    }\n");
+       98:  374:    printf("    if (old) dec_ref(old);\n");
+       98:  375:    printf("    return malloc(size);\n");
+       98:  376:    printf("}\n\n");
+        -:  377:
+       98:  378:    printf("Obj* reuse_as_int(Obj* old, long value) {\n");
+       98:  379:    printf("    Obj* obj = try_reuse(old, sizeof(Obj));\n");
+       98:  380:    printf("    obj->mark = 1;\n");
+       98:  381:    printf("    obj->scc_id = -1;\n");
+       98:  382:    printf("    obj->is_pair = 0;\n");
+       98:  383:    printf("    obj->scan_tag = 0;\n");
+       98:  384:    printf("    obj->i = value;\n");
+       98:  385:    printf("    return obj;\n");
+       98:  386:    printf("}\n\n");
+        -:  387:
+       98:  388:    printf("Obj* reuse_as_pair(Obj* old, Obj* a, Obj* b) {\n");
+       98:  389:    printf("    Obj* obj = try_reuse(old, sizeof(Obj));\n");
+       98:  390:    printf("    obj->mark = 1;\n");
+       98:  391:    printf("    obj->scc_id = -1;\n");
+       98:  392:    printf("    obj->is_pair = 1;\n");
+       98:  393:    printf("    obj->scan_tag = 0;\n");
+       98:  394:    printf("    obj->a = a;\n");
+       98:  395:    printf("    obj->b = b;\n");
+       98:  396:    printf("    return obj;\n");
+       98:  397:    printf("}\n\n");
+       98:  398:}
+        -:  399:
+        -:  400:// -- NLL Free Generation --
+        -:  401:
+    #####:  402:void gen_nll_free(FreePoint* fp, char* buf, int buf_size) {
+    #####:  403:    if (fp->is_conditional) {
+    #####:  404:        snprintf(buf, buf_size,
+        -:  405:            "  // NLL: %s may be freed here on some paths\n"
+        -:  406:            "  if (!_path_uses_%s) free_obj(%s);\n",
+        -:  407:            fp->var_name, fp->var_name, fp->var_name);
+        -:  408:    } else {
+    #####:  409:        snprintf(buf, buf_size,
+        -:  410:            "  // NLL: %s freed early (before scope end)\n"
+        -:  411:            "  free_obj(%s);\n",
+        -:  412:            fp->var_name, fp->var_name);
+        -:  413:    }
+    #####:  414:}
+        -:  415:
+        -:  416:// -- Type Registry Init --
+        -:  417:
+       98:  418:void init_type_registry(void) {
+        -:  419:    static TypeField pair_fields[] = {
+        -:  420:        {"a", "Obj", 1, FIELD_STRONG},
+        -:  421:        {"b", "Obj", 1, FIELD_STRONG}
+        -:  422:    };
+       98:  423:    register_type("Pair", pair_fields, 2);
+        -:  424:
+        -:  425:    static TypeField list_fields[] = {
+        -:  426:        {"a", "List", 1, FIELD_STRONG},
+        -:  427:        {"b", "List", 1, FIELD_STRONG}
+        -:  428:    };
+       98:  429:    register_type("List", list_fields, 2);
+        -:  430:
+        -:  431:    static TypeField tree_fields[] = {
+        -:  432:        {"left", "Tree", 1, FIELD_STRONG},
+        -:  433:        {"right", "Tree", 1, FIELD_STRONG},
+        -:  434:        {"value", "int", 0, FIELD_UNTRACED}
+        -:  435:    };
+       98:  436:    register_type("Tree", tree_fields, 3);
+        -:  437:
+       98:  438:    build_ownership_graph();
+       98:  439:    analyze_back_edges();
+       98:  440:}
+        -:  441:
+        -:  442:// -- Runtime Header Generation --
+        -:  443:
+       98:  444:void gen_runtime_header(void) {
+       98:  445:    printf("// Purple + ASAP C Compiler Output\n");
+       98:  446:    printf("// Primary Strategy: ASAP + ISMM 2024 (Deeply Immutable Cycles)\n\n");
+        -:  447:
+       98:  448:    printf("#include <stdlib.h>\n");
+       98:  449:    printf("#include <stdio.h>\n");
+       98:  450:    printf("#include <limits.h>\n\n");
+       98:  451:    printf("void invalidate_weak_refs_for(void* target);\n\n");
+        -:  452:
+       98:  453:    printf("typedef struct Obj {\n");
+       98:  454:    printf("    int mark;      // Reference count or mark bit\n");
+       98:  455:    printf("    int scc_id;    // SCC identifier (-1 if not in SCC)\n");
+       98:  456:    printf("    int is_pair;   // 1 if pair, 0 if int\n");
+       98:  457:    printf("    unsigned int scan_tag; // Scanner mark (separate from RC)\n");
+       98:  458:    printf("    union {\n");
+       98:  459:    printf("        long i;\n");
+       98:  460:    printf("        struct { struct Obj *a, *b; };\n");
+       98:  461:    printf("    };\n");
+       98:  462:    printf("} Obj;\n\n");
+        -:  463:
+        -:  464:    // Dynamic free list
+       98:  465:    printf("// Dynamic Free List\n");
+       98:  466:    printf("typedef struct FreeNode { Obj* obj; struct FreeNode* next; } FreeNode;\n");
+       98:  467:    printf("FreeNode* FREE_HEAD = NULL;\n");
+       98:  468:    printf("int FREE_COUNT = 0;\n\n");
+        -:  469:
+        -:  470:    // Stack pool
+       98:  471:    printf("// Stack Allocation Pool\n");
+       98:  472:    printf("#define STACK_POOL_SIZE 256\n");
+       98:  473:    printf("Obj STACK_POOL[STACK_POOL_SIZE];\n");
+       98:  474:    printf("int STACK_PTR = 0;\n\n");
+        -:  475:
+        -:  476:    // Constructors
+       98:  477:    printf("Obj* mk_int(long i) {\n");
+       98:  478:    printf("    Obj* x = malloc(sizeof(Obj));\n");
+       98:  479:    printf("    x->mark = 1; x->scc_id = -1; x->is_pair = 0; x->scan_tag = 0;\n");
+       98:  480:    printf("    x->i = i;\n");
+       98:  481:    printf("    return x;\n");
+       98:  482:    printf("}\n\n");
+        -:  483:
+       98:  484:    printf("Obj* mk_pair(Obj* a, Obj* b) {\n");
+       98:  485:    printf("    Obj* x = malloc(sizeof(Obj));\n");
+       98:  486:    printf("    x->mark = 1; x->scc_id = -1; x->is_pair = 1; x->scan_tag = 0;\n");
+       98:  487:    printf("    x->a = a; x->b = b;\n");
+       98:  488:    printf("    return x;\n");
+       98:  489:    printf("}\n\n");
+        -:  490:
+        -:  491:    // Shape-based deallocation
+       98:  492:    printf("// Phase 2: Shape-based deallocation (Ghiya-Hendren analysis)\n");
+       98:  493:    printf("// TREE: Direct free (ASAP)\n");
+       98:  494:    printf("void free_tree(Obj* x) {\n");
+       98:  495:    printf("    if (!x) return;\n");
+       98:  496:    printf("    if (x >= STACK_POOL && x < STACK_POOL + STACK_POOL_SIZE) return;\n");
+       98:  497:    printf("    if (x->is_pair) {\n");
+       98:  498:        printf("        free_tree(x->a);\n");
+       98:  499:        printf("        free_tree(x->b);\n");
+       98:  500:    printf("    }\n");
+       98:  501:    printf("    invalidate_weak_refs_for(x);\n");
+       98:  502:    printf("    free(x);\n");
+       98:  503:    printf("}\n\n");
+        -:  504:
+       98:  505:    printf("// DAG: Reference counting\n");
+       98:  506:    printf("void dec_ref(Obj* x) {\n");
+       98:  507:    printf("    if (!x) return;\n");
+       98:  508:    printf("    if (x >= STACK_POOL && x < STACK_POOL + STACK_POOL_SIZE) return;\n");
+       98:  509:    printf("    if (x->mark < 0) return;\n");
+       98:  510:    printf("    x->mark--;\n");
+       98:  511:    printf("    if (x->mark <= 0) {\n");
+       98:  512:    printf("        if (x->is_pair) {\n");
+       98:  513:    printf("            dec_ref(x->a);\n");
+       98:  514:    printf("            dec_ref(x->b);\n");
+       98:  515:    printf("        }\n");
+       98:  516:    printf("        invalidate_weak_refs_for(x);\n");
+       98:  517:    printf("        free(x);\n");
+       98:  518:    printf("    }\n");
+       98:  519:    printf("}\n\n");
+        -:  520:
+       98:  521:    printf("void inc_ref(Obj* x) {\n");
+       98:  522:    printf("    if (!x) return;\n");
+       98:  523:    printf("    if (x >= STACK_POOL && x < STACK_POOL + STACK_POOL_SIZE) return;\n");
+       98:  524:    printf("    if (x->mark < 0) { x->mark = 1; return; }\n");
+       98:  525:    printf("    x->mark++;\n");
+       98:  526:    printf("}\n\n");
+        -:  527:
+        -:  528:    // Free list operations
+       98:  529:    printf("void free_obj(Obj* x) {\n");
+       98:  530:    printf("    if (!x) return;\n");
+       98:  531:    printf("    if (x >= STACK_POOL && x < STACK_POOL + STACK_POOL_SIZE) return;\n");
+       98:  532:    printf("    if (x->mark < 0) return;\n");
+       98:  533:    printf("    x->mark = -1;\n");
+       98:  534:    printf("    FreeNode* n = malloc(sizeof(FreeNode));\n");
+       98:  535:    printf("    n->obj = x; n->next = FREE_HEAD; FREE_HEAD = n;\n");
+       98:  536:    printf("    FREE_COUNT++;\n");
+       98:  537:    printf("}\n\n");
+        -:  538:
+       98:  539:    printf("void flush_freelist() {\n");
+       98:  540:    printf("    while (FREE_HEAD) {\n");
+       98:  541:    printf("        FreeNode* n = FREE_HEAD;\n");
+       98:  542:    printf("        FREE_HEAD = n->next;\n");
+       98:  543:    printf("        if (n->obj->mark < 0) {\n");
+       98:  544:    printf("            invalidate_weak_refs_for(n->obj);\n");
+       98:  545:    printf("            free(n->obj);\n");
+       98:  546:    printf("        }\n");
+       98:  547:    printf("        free(n);\n");
+       98:  548:    printf("    }\n");
+       98:  549:    printf("    FREE_COUNT = 0;\n");
+       98:  550:    printf("}\n\n");
+        -:  551:
+        -:  552:    // Stack allocation
+       98:  553:    printf("Obj* mk_int_stack(long i) {\n");
+       98:  554:    printf("    if (STACK_PTR < STACK_POOL_SIZE) {\n");
+       98:  555:    printf("        Obj* x = &STACK_POOL[STACK_PTR++];\n");
+       98:  556:    printf("        x->mark = 0; x->scc_id = -1; x->is_pair = 0; x->scan_tag = 0;\n");
+       98:  557:    printf("        x->i = i;\n");
+       98:  558:    printf("        return x;\n");
+       98:  559:    printf("    }\n");
+       98:  560:    printf("    return mk_int(i);\n");
+       98:  561:    printf("}\n\n");
+       98:  562:}

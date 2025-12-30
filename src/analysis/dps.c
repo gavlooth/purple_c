@@ -9,6 +9,7 @@
 // Analyze expression for DPS opportunities
 DPSInfo* analyze_dps(Value* expr) {
     DPSInfo* info = malloc(sizeof(DPSInfo));
+    if (!info) return NULL;
     info->dps_class = DPS_NONE;
     info->returns_fresh = 0;
     info->can_stack_dest = 0;
@@ -40,6 +41,7 @@ int is_dps_candidate(Value* lambda) {
     // Analyze lambda body for fresh allocations in return position
     Value* body = lambda->lam.body;
     DPSInfo* info = analyze_dps(body);
+    if (!info) return 0;
 
     int result = info->returns_fresh;
     free(info);

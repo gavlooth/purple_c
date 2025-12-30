@@ -1,0 +1,21 @@
+You are running an automated fix loop in this repository.
+
+Goal (one per run):
+- Find ONE concrete issue (failing test, compiler error, clear bug, crash, UB, TODO/FIXME with evidence) and fix it.
+- Keep the change minimal and safe.
+
+Constraints:
+- Follow all project constraints in CLAUDE.md and AGENTS.md (ASAP-first; no stop-the-world / GC-style pauses).
+- Do not refactor broadly or change architecture.
+- Do not add new features.
+- Do not run git commit; leave changes unstaged.
+
+Validation:
+- Prefer targeted checks. If needed, run: `make test` (or `./tests.sh`).
+- Keep runtime reasonable; avoid long-running steps unless required to validate the fix.
+
+Output contract (required):
+- If no actionable issue is found OR the fix would be too large, output exactly:
+  NO_ISSUES
+- Otherwise, output a single line at the end:
+  COMMIT_MSG: <imperative summary <= 65 chars>
