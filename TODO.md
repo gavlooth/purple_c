@@ -163,27 +163,35 @@
 - [x] Stack-allocate destinations where possible
 - [x] DPS runtime (Dest struct, write_int, write_pair, add_dps, map_dps, fold_dps)
 
-### Phase 10: Exception Handling 🔲
-- [ ] Track live allocations at each point
-- [ ] Generate landing pads for cleanup
-- [ ] Handle nested try/catch
+### Phase 10: Exception Handling ✅
+- [x] Track live allocations at each point
+- [x] Generate landing pads for cleanup
+- [x] Handle nested try/catch
+- [x] Exception runtime (TRY/CATCH macros, exc_push/pop, exc_throw)
+- [x] Auto-registration cleanup (mk_int_exc, free_exc)
 
-### Phase 11: Concurrency Support 🔲
-- [ ] Detect thread spawn points
-- [ ] Infer ownership transfer automatically
-- [ ] Use concurrent deferred RC (PLDI 2021) if needed
+### Phase 11: Concurrency Support ✅
+- [x] Detect thread spawn points
+- [x] Infer ownership transfer automatically
+- [x] Use concurrent deferred RC (PLDI 2021) if needed
+- [x] Atomic RC for shared objects (ConcObj, conc_inc_ref, conc_dec_ref)
+- [x] Ownership transfer channels (MsgChannel, channel_send/recv)
+- [x] Thread spawn with ownership semantics (spawn_thread)
+- [x] Freeze for immutable sharing (conc_freeze)
 
 ---
 
 ## Test Status
 
-All 44 tests passing:
+All 64 tests passing:
 - 13 original ASAP tests
 - 8 optimization tests (Phases 2-5)
 - 4 Phase 6b tests (ISMM 2024 SCC-based RC)
 - 4 Phase 7 tests (Deferred RC)
 - 6 Phase 8 tests (Arena Allocation)
 - 7 Phase 9 tests (DPS)
+- 10 Phase 10 tests (Exception Handling)
+- 10 Phase 11 tests (Concurrency)
 - 2 integration tests
 
 ---
@@ -256,11 +264,13 @@ Mutable cycles that never freeze are handled by deferred RC fallback:
 | `src/memory/deferred.h/c` | Phase 7: Deferred RC fallback |
 | `src/memory/arena.h/c` | Phase 8: Arena allocator |
 | `src/analysis/dps.h/c` | Phase 9: Destination-Passing Style |
+| `src/memory/exception.h/c` | Phase 10: Exception handling with landing pads |
+| `src/memory/concurrent.h/c` | Phase 11: Concurrency with ownership transfer |
 | `src/codegen/codegen.h/c` | Code generation & runtime emission |
 | `src/eval/eval.h/c` | Evaluator & handlers |
 | `src/parser/parser.h/c` | Reader/parser |
 | `main.c` | Legacy monolithic implementation |
-| `tests.sh` | Test suite (44 tests) |
+| `tests.sh` | Test suite (64 tests) |
 | `Makefile` | Build system for modular structure |
 | `IMPLEMENTATION_PLAN.md` | Detailed implementation plan with pseudocode |
 | `CLAUDE.md` | Documentation of ASAP principles |
@@ -269,7 +279,9 @@ Mutable cycles that never freeze are handled by deferred RC fallback:
 
 ## Next Steps
 
-1. **Implement Phase 10**: Exception handling with landing pads
-2. **Implement Phase 11**: Concurrency support with ownership transfer
-3. **Benchmark**: Compare performance vs tracing GC
-4. **Real-world testing**: Test with larger Purple programs
+All 11 phases complete! Remaining work:
+
+1. **Benchmark**: Compare performance vs tracing GC
+2. **Real-world testing**: Test with larger Purple programs
+3. **Integration testing**: Test exception + concurrency together
+4. **Documentation**: Add API documentation for runtime functions

@@ -22,6 +22,8 @@
 #include "memory/scc.h"
 #include "memory/deferred.h"
 #include "memory/arena.h"
+#include "memory/exception.h"
+#include "memory/concurrent.h"
 #include "analysis/shape.h"
 #include "analysis/escape.h"
 #include "analysis/dps.h"
@@ -65,6 +67,12 @@ int main(int argc, char** argv) {
 
     // Generate DPS runtime (Phase 9)
     gen_dps_runtime();
+
+    // Generate exception handling runtime (Phase 10)
+    gen_exception_runtime();
+
+    // Generate concurrency runtime (Phase 11)
+    gen_concurrent_runtime();
 
     // Generate ASAP scanner for List type
     gen_asap_scanner("List", 1);

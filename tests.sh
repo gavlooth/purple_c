@@ -291,6 +291,114 @@ run_test "Phase9-FoldDPS" \
     "(lift 0)" \
     "Obj* fold_dps"
 
+# =============================================================================
+# PHASE 10: Exception Handling
+# =============================================================================
+
+# 45. Phase 10: Exception type enum
+run_test "Phase10-ExceptionType" \
+    "(lift 0)" \
+    "typedef enum"
+
+# 46. Phase 10: Exception struct
+run_test "Phase10-ExceptionStruct" \
+    "(lift 0)" \
+    "typedef struct Exception"
+
+# 47. Phase 10: Exception frame struct
+run_test "Phase10-ExcFrame" \
+    "(lift 0)" \
+    "typedef struct ExcFrame"
+
+# 48. Phase 10: Exception push function
+run_test "Phase10-ExcPush" \
+    "(lift 0)" \
+    "ExcFrame* exc_push()"
+
+# 49. Phase 10: Exception pop function
+run_test "Phase10-ExcPop" \
+    "(lift 0)" \
+    "void exc_pop()"
+
+# 50. Phase 10: Register cleanup function
+run_test "Phase10-RegisterCleanup" \
+    "(lift 0)" \
+    "void exc_register_cleanup"
+
+# 51. Phase 10: Run cleanups (landing pad)
+run_test "Phase10-RunCleanups" \
+    "(lift 0)" \
+    "void exc_run_cleanups()"
+
+# 52. Phase 10: Throw function
+run_test "Phase10-ExcThrow" \
+    "(lift 0)" \
+    "void exc_throw"
+
+# 53. Phase 10: TRY macro
+run_test "Phase10-TryMacro" \
+    "(lift 0)" \
+    "#define TRY"
+
+# 54. Phase 10: CATCH macro
+run_test "Phase10-CatchMacro" \
+    "(lift 0)" \
+    "#define CATCH"
+
+# =============================================================================
+# PHASE 11: Concurrency Support
+# =============================================================================
+
+# 55. Phase 11: Thread-local storage
+run_test "Phase11-ThreadLocal" \
+    "(lift 0)" \
+    "__thread int THREAD_ID"
+
+# 56. Phase 11: Concurrent object struct
+run_test "Phase11-ConcObj" \
+    "(lift 0)" \
+    "typedef struct ConcObj"
+
+# 57. Phase 11: Atomic increment
+run_test "Phase11-ConcIncRef" \
+    "(lift 0)" \
+    "void conc_inc_ref"
+
+# 58. Phase 11: Atomic decrement
+run_test "Phase11-ConcDecRef" \
+    "(lift 0)" \
+    "void conc_dec_ref"
+
+# 59. Phase 11: Message channel struct
+run_test "Phase11-MsgChannel" \
+    "(lift 0)" \
+    "typedef struct MsgChannel"
+
+# 60. Phase 11: Channel create
+run_test "Phase11-ChannelCreate" \
+    "(lift 0)" \
+    "MsgChannel* channel_create"
+
+# 61. Phase 11: Channel send (ownership transfer)
+run_test "Phase11-ChannelSend" \
+    "(lift 0)" \
+    "int channel_send"
+
+# 62. Phase 11: Channel receive (ownership transfer)
+run_test "Phase11-ChannelRecv" \
+    "(lift 0)" \
+    "ConcObj* channel_recv"
+
+# 63. Phase 11: Spawn thread helper
+run_test "Phase11-SpawnThread" \
+    "(lift 0)" \
+    "pthread_t spawn_thread"
+
+# 64. Phase 11: Freeze for immutable sharing
+run_test "Phase11-ConcFreeze" \
+    "(lift 0)" \
+    "void conc_freeze"
+
 if [ $FAIL -eq 0 ]; then
     echo "All tests passed!"
     exit 0

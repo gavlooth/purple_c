@@ -21,6 +21,8 @@ SRCS = $(SRC_DIR)/main.c \
        $(MEMORY_DIR)/scc.c \
        $(MEMORY_DIR)/deferred.c \
        $(MEMORY_DIR)/arena.c \
+       $(MEMORY_DIR)/exception.c \
+       $(MEMORY_DIR)/concurrent.c \
        $(CODEGEN_DIR)/codegen.c \
        $(EVAL_DIR)/eval.c \
        $(PARSER_DIR)/parser.c
