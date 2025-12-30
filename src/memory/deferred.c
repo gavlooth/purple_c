@@ -5,6 +5,12 @@
 
 DeferredContext* mk_deferred_context(int batch_size) {
     DeferredContext* ctx = malloc(sizeof(DeferredContext));
+    if (!ctx) return NULL;
+    ctx->obj_lookup = hashmap_new();
+    if (!ctx->obj_lookup) {
+        free(ctx);
+        return NULL;
+    }
     ctx->pending = NULL;
     ctx->pending_count = 0;
     ctx->batch_size = batch_size > 0 ? batch_size : 32;
@@ -20,6 +26,9 @@ void free_deferred_context(DeferredContext* ctx) {
         free(d);
         d = next;
     }
+    if (ctx->obj_lookup) {
+        hashmap_free(ctx->obj_lookup);
+    }
     free(ctx);
 }
 
@@ -28,24 +37,25 @@ void free_deferred_context(DeferredContext* ctx) {
 void defer_decrement(DeferredContext* ctx, void* obj) {
     if (!ctx || !obj) return;
 
-    // Check if already in pending list
-    DeferredDec* d = ctx->pending;
-    while (d) {
-        if (d->obj == obj) {
-            d->count++;
-            return;
-        }
-        d = d->next;
+    // O(1) lookup using hash map
+    DeferredDec* d = (DeferredDec*)hashmap_get(ctx->obj_lookup, obj);
+    if (d) {
+        d->count++;
+        return;
     }
 
     // Add new entry
     d = malloc(sizeof(DeferredDec));
+    if (!d) return;  // Allocation failed
     d->obj = obj;
     d->count = 1;
     d->next = ctx->pending;
     ctx->pending = d;
     ctx->pending_count++;
     ctx->total_deferred++;
+
+    // Add to hash map for O(1) lookup
+    hashmap_put(ctx->obj_lookup, obj, d);
 }
 
 void process_deferred(DeferredContext* ctx, int max_count) {
@@ -62,6 +72,8 @@ void process_deferred(DeferredContext* ctx, int max_count) {
         processed++;
 
         if (d->count <= 0) {
+            // Remove from hash map
+            hashmap_remove(ctx->obj_lookup, d->obj);
             // Remove from list
             *prev = d->next;
             ctx->pending_count--;
@@ -95,26 +107,49 @@ void gen_deferred_runtime(void) {
     printf("typedef struct DeferredDec {\n");
     printf("    Obj* obj;\n");
     printf("    int count;\n");
-    printf("    struct DeferredDec* next;\n");
+    printf("    struct DeferredDec* next;      // For linked list\n");
+    printf("    struct DeferredDec* hash_next; // For hash bucket chain\n");
     printf("} DeferredDec;\n\n");
 
+    printf("#define DEFERRED_HASH_SIZE 256\n");
+    printf("DeferredDec* DEFERRED_HASH[DEFERRED_HASH_SIZE];\n");
     printf("DeferredDec* DEFERRED_HEAD = NULL;\n");
     printf("int DEFERRED_COUNT = 0;\n");
     printf("#define DEFERRED_BATCH_SIZE 32\n\n");
 
+    printf("static size_t deferred_hash_ptr(void* p) {\n");
+    printf("    size_t x = (size_t)p;\n");
+    printf("    x = ((x >> 16) ^ x) * 0x45d9f3b;\n");
+    printf("    x = ((x >> 16) ^ x) * 0x45d9f3b;\n");
+    printf("    return (x >> 16) ^ x;\n");
+    printf("}\n\n");
+
     printf("void defer_dec(Obj* obj) {\n");
     printf("    if (!obj) return;\n");
-    printf("    DeferredDec* d = DEFERRED_HEAD;\n");
+    printf("    size_t idx = deferred_hash_ptr(obj) %% DEFERRED_HASH_SIZE;\n");
+    printf("    DeferredDec* d = DEFERRED_HASH[idx];\n");
     printf("    while (d) {\n");
     printf("        if (d->obj == obj) { d->count++; return; }\n");
-    printf("        d = d->next;\n");
+    printf("        d = d->hash_next;\n");
     printf("    }\n");
     printf("    d = malloc(sizeof(DeferredDec));\n");
+    printf("    if (!d) return;\n");
     printf("    d->obj = obj;\n");
     printf("    d->count = 1;\n");
     printf("    d->next = DEFERRED_HEAD;\n");
+    printf("    d->hash_next = DEFERRED_HASH[idx];\n");
     printf("    DEFERRED_HEAD = d;\n");
+    printf("    DEFERRED_HASH[idx] = d;\n");
     printf("    DEFERRED_COUNT++;\n");
+    printf("}\n\n");
+
+    printf("static void deferred_remove_from_hash(DeferredDec* d) {\n");
+    printf("    size_t idx = deferred_hash_ptr(d->obj) %% DEFERRED_HASH_SIZE;\n");
+    printf("    DeferredDec** hp = &DEFERRED_HASH[idx];\n");
+    printf("    while (*hp) {\n");
+    printf("        if (*hp == d) { *hp = d->hash_next; return; }\n");
+    printf("        hp = &(*hp)->hash_next;\n");
+    printf("    }\n");
     printf("}\n\n");
 
     printf("void process_deferred_batch(int max_count) {\n");
@@ -126,13 +161,17 @@ void gen_deferred_runtime(void) {
     printf("        processed++;\n");
     printf("        if (d->count <= 0) {\n");
     printf("            *prev = d->next;\n");
+    printf("            deferred_remove_from_hash(d);\n");
     printf("            DEFERRED_COUNT--;\n");
     printf("            // Apply actual decrement\n");
     printf("            d->obj->mark--;\n");
     printf("            if (d->obj->mark <= 0) {\n");
     printf("                // Object is dead, defer children\n");
-    printf("                if (d->obj->a) defer_dec(d->obj->a);\n");
-    printf("                if (d->obj->b) defer_dec(d->obj->b);\n");
+    printf("                if (d->obj->is_pair) {\n");
+    printf("                    if (d->obj->a) defer_dec(d->obj->a);\n");
+    printf("                    if (d->obj->b) defer_dec(d->obj->b);\n");
+    printf("                }\n");
+    printf("                invalidate_weak_refs_for(d->obj);\n");
     printf("                free(d->obj);\n");
     printf("            }\n");
     printf("            free(d);\n");

@@ -2,6 +2,7 @@
 #include "../codegen/codegen.h"
 #include "../analysis/escape.h"
 #include "../analysis/shape.h"
+#include "../util/dstring.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -105,6 +106,7 @@ Value* h_app_default(Value* exp, Value* menv) {
     Value* args_expr = cdr(exp);
 
     Value* fn = eval(f_expr, menv);
+    if (!fn) return NIL;  // Guard: fn could be NULL
     Value* args = eval_list(args_expr, menv);
 
     if (fn->tag == T_PRIM) return fn->prim(args, menv);
@@ -163,6 +165,7 @@ Value* h_let_default(Value* exp, Value* menv) {
         if (val->tag == T_CODE) any_code = 1;
 
         BindingInfo* info = malloc(sizeof(BindingInfo));
+        if (!info) continue;  // Skip on allocation failure
         info->sym = sym;
         info->val = val;
         info->next = NULL;
@@ -188,55 +191,51 @@ Value* h_let_default(Value* exp, Value* menv) {
         }
 
         analyze_expr(body, ctx);
-        analyze_escape(body, ctx, ESCAPE_NONE);
+        analyze_escape(body, ctx, ESCAPE_GLOBAL);
         analyze_shapes_expr(exp, shape_ctx);
 
-        char all_decls[8192] = "";
-        char all_frees[4096] = "";
+        DString* all_decls = ds_new();
+        DString* all_frees = ds_new();
         b = bind_list;
         while (b) {
             VarUsage* usage = find_var(ctx, b->sym->s);
             int is_captured = usage ? usage->captured_by_lambda : 0;
             int use_count = usage ? usage->use_count : 0;
+            int escape_class = usage ? usage->escape_class : ESCAPE_NONE;
 
             ShapeInfo* shape_info = find_shape(shape_ctx, b->sym->s);
             Shape var_shape = shape_info ? shape_info->shape : SHAPE_UNKNOWN;
 
-            char decl[1024];
             char* val_str = (b->val->tag == T_CODE) ? b->val->s : val_to_str(b->val);
 
             if (b->val->tag != T_CODE) {
                 if (b->val->tag == T_INT) {
-                    sprintf(decl, "  Obj* %s = mk_int(%ld);\n", b->sym->s, b->val->i);
+                    ds_printf(all_decls, "  Obj* %s = mk_int(%ld);\n", b->sym->s, b->val->i);
                 } else {
-                    sprintf(decl, "  Obj* %s = %s;\n", b->sym->s, val_str);
+                    ds_printf(all_decls, "  Obj* %s = %s;\n", b->sym->s, val_str);
                 }
             } else {
-                sprintf(decl, "  Obj* %s = %s;\n", b->sym->s, val_str);
+                ds_printf(all_decls, "  Obj* %s = %s;\n", b->sym->s, val_str);
             }
-            strcat(all_decls, decl);
 
             const char* free_fn = shape_free_strategy(var_shape);
 
-            if (!is_captured && use_count > 0) {
-                char free_stmt[256];
-                sprintf(free_stmt, "  %s(%s); // ASAP Clean (shape: %s)\n",
+            if (is_captured) {
+                ds_printf(all_frees, "  // %s captured by closure - no free\n", b->sym->s);
+            } else if (use_count == 0) {
+                ds_printf(all_decls, "  %s(%s); // unused\n", free_fn, b->sym->s);
+            } else if (escape_class == ESCAPE_GLOBAL) {
+                ds_printf(all_frees, "  // %s escapes to return - no free\n", b->sym->s);
+            } else {
+                DString* temp = ds_new();
+                ds_printf(temp, "  %s(%s); // ASAP Clean (shape: %s)\n",
                         free_fn, b->sym->s,
                         var_shape == SHAPE_TREE ? "TREE" :
                         var_shape == SHAPE_DAG ? "DAG" :
                         var_shape == SHAPE_CYCLIC ? "CYCLIC" : "UNKNOWN");
-                char temp[4096];
-                strcpy(temp, free_stmt);
-                strcat(temp, all_frees);
-                strcpy(all_frees, temp);
-            } else if (!is_captured && use_count == 0) {
-                char free_stmt[256];
-                sprintf(free_stmt, "  %s(%s); // unused\n", free_fn, b->sym->s);
-                strcat(all_decls, free_stmt);
-            } else if (is_captured) {
-                char comment[256];
-                sprintf(comment, "  // %s captured by closure - no free\n", b->sym->s);
-                strcat(all_frees, comment);
+                ds_append(temp, ds_cstr(all_frees));
+                ds_free(all_frees);
+                all_frees = temp;
             }
 
             Value* ref = mk_code(b->sym->s);
@@ -253,10 +252,14 @@ Value* h_let_default(Value* exp, Value* menv) {
         Value* res = eval(body, body_menv);
         char* sres = (res->tag == T_CODE) ? res->s : val_to_str(res);
 
-        char block[16384];
-        sprintf(block, "({\n%s  Obj* _res = %s;\n%s  _res;\n})", all_decls, sres, all_frees);
+        DString* block = ds_new();
+        ds_printf(block, "({\n%s  Obj* _res = %s;\n%s  _res;\n})",
+                  ds_cstr(all_decls), sres, ds_cstr(all_frees));
 
         if (res->tag != T_CODE) free(sres);
+
+        ds_free(all_decls);
+        ds_free(all_frees);
 
         while (bind_list) {
             BindingInfo* next = bind_list->next;
@@ -264,7 +267,7 @@ Value* h_let_default(Value* exp, Value* menv) {
             bind_list = next;
         }
 
-        return mk_code(block);
+        return mk_code(ds_take(block));
     }
 
     BindingInfo* b = bind_list;
@@ -297,13 +300,13 @@ Value* h_if_default(Value* exp, Value* menv) {
     if (is_code(c)) {
         Value* t = eval(then_expr, menv);
         Value* e = eval(else_expr, menv);
-        char buf[2048];
         char* st = (t->tag == T_CODE) ? t->s : val_to_str(t);
         char* se = (e->tag == T_CODE) ? e->s : val_to_str(e);
-        sprintf(buf, "((%s)->i ? (%s) : (%s))", c->s, st, se);
+        DString* ds = ds_new();
+        ds_printf(ds, "((%s)->i ? (%s) : (%s))", c->s, st, se);
         if (t->tag != T_CODE) free(st);
         if (e->tag != T_CODE) free(se);
-        return mk_code(buf);
+        return mk_code(ds_take(ds));
     }
 
     if (!is_nil(c)) return eval(then_expr, menv);
@@ -314,6 +317,7 @@ Value* h_if_default(Value* exp, Value* menv) {
 
 Value* eval(Value* expr, Value* menv) {
     if (is_nil(expr)) return NIL;
+    if (!menv) return NIL;  // NULL check for menv
     if (expr->tag == T_INT) return menv->menv.h_lit(expr, menv);
     if (expr->tag == T_CODE) return expr;
 
@@ -389,12 +393,12 @@ Value* eval(Value* expr, Value* menv) {
                     Value* remaining = cdr(rest);
                     while (!is_nil(remaining)) {
                         Value* next = eval(car(remaining), menv);
-                        char buf[1024];
                         char* sr = result->s;
                         char* sn = is_code(next) ? next->s : val_to_str(next);
-                        sprintf(buf, "(%s && %s)", sr, sn);
+                        DString* ds = ds_new();
+                        ds_printf(ds, "(%s && %s)", sr, sn);
                         if (!is_code(next)) free(sn);
-                        result = mk_code(buf);
+                        result = mk_code(ds_take(ds));
                         remaining = cdr(remaining);
                     }
                     return result;
@@ -415,12 +419,12 @@ Value* eval(Value* expr, Value* menv) {
                     Value* remaining = cdr(rest);
                     while (!is_nil(remaining)) {
                         Value* next = eval(car(remaining), menv);
-                        char buf[1024];
                         char* sr = result->s;
                         char* sn = is_code(next) ? next->s : val_to_str(next);
-                        sprintf(buf, "(%s || %s)", sr, sn);
+                        DString* ds = ds_new();
+                        ds_printf(ds, "(%s || %s)", sr, sn);
                         if (!is_code(next)) free(sn);
-                        result = mk_code(buf);
+                        result = mk_code(ds_take(ds));
                         remaining = cdr(remaining);
                     }
                     return result;
@@ -460,11 +464,11 @@ Value* eval(Value* expr, Value* menv) {
         if (sym_eq(op, SYM_SCAN)) {
             Value* type_sym = eval(car(args), menv);
             Value* val = eval(car(cdr(args)), menv);
-            char buf[256];
             char* sval = (val->tag == T_CODE) ? val->s : val_to_str(val);
-            sprintf(buf, "scan_%s(%s); // ASAP Mark", type_sym->s, sval);
+            DString* ds = ds_new();
+            ds_printf(ds, "scan_%s(%s); // ASAP Mark", type_sym->s, sval);
             if (val->tag != T_CODE) free(sval);
-            return mk_code(buf);
+            return mk_code(ds_take(ds));
         }
 
         return menv->menv.h_app(expr, menv);
@@ -474,62 +478,75 @@ Value* eval(Value* expr, Value* menv) {
 
 // -- Primitives --
 
+// Helper: safely get two int args, return 0 on error
+static int get_two_args(Value* args, Value** a, Value** b) {
+    if (!args || is_nil(args)) return 0;
+    *a = car(args);
+    if (!*a) return 0;
+    Value* rest = cdr(args);
+    if (!rest || is_nil(rest)) return 0;
+    *b = car(rest);
+    if (!*b) return 0;
+    return 1;
+}
+
 Value* prim_add(Value* args, Value* menv) {
-    Value* a = car(args);
-    Value* b = car(cdr(args));
+    Value* a; Value* b;
+    if (!get_two_args(args, &a, &b)) return NIL;
     if (is_code(a) || is_code(b)) return emit_c_call("add", a, b);
+    if (a->tag != T_INT || b->tag != T_INT) return NIL;
     return mk_int(a->i + b->i);
 }
 
 Value* prim_sub(Value* args, Value* menv) {
-    Value* a = car(args);
-    Value* b = car(cdr(args));
+    Value* a; Value* b;
+    if (!get_two_args(args, &a, &b)) return NIL;
     if (is_code(a) || is_code(b)) return emit_c_call("sub", a, b);
+    if (a->tag != T_INT || b->tag != T_INT) return NIL;
     return mk_int(a->i - b->i);
 }
 
 Value* prim_cons(Value* args, Value* menv) {
-    Value* a = car(args);
-    Value* b = car(cdr(args));
+    Value* a; Value* b;
+    if (!get_two_args(args, &a, &b)) return NIL;
     if (is_code(a) || is_code(b)) return emit_c_call("mk_pair", a, b);
     return mk_cell(a, b);
 }
 
 Value* prim_run(Value* args, Value* menv) {
-    return eval(car(args), menv);
+    Value* a = car(args);
+    if (!a) return NIL;
+    return eval(a, menv);
 }
 
 // -- Additional Arithmetic Primitives --
 
 Value* prim_mul(Value* args, Value* menv) {
     (void)menv;
-    Value* a = car(args);
-    Value* b = car(cdr(args));
+    Value* a; Value* b;
+    if (!get_two_args(args, &a, &b)) return NIL;
     if (is_code(a) || is_code(b)) return emit_c_call("mul", a, b);
+    if (a->tag != T_INT || b->tag != T_INT) return NIL;
     return mk_int(a->i * b->i);
 }
 
 Value* prim_div(Value* args, Value* menv) {
     (void)menv;
-    Value* a = car(args);
-    Value* b = car(cdr(args));
+    Value* a; Value* b;
+    if (!get_two_args(args, &a, &b)) return NIL;
     if (is_code(a) || is_code(b)) return emit_c_call("div_op", a, b);
-    if (b->i == 0) {
-        printf("Error: Division by zero\n");
-        return mk_int(0);
-    }
+    if (a->tag != T_INT || b->tag != T_INT) return NIL;
+    if (b->i == 0) return mk_int(0);
     return mk_int(a->i / b->i);
 }
 
 Value* prim_mod(Value* args, Value* menv) {
     (void)menv;
-    Value* a = car(args);
-    Value* b = car(cdr(args));
+    Value* a; Value* b;
+    if (!get_two_args(args, &a, &b)) return NIL;
     if (is_code(a) || is_code(b)) return emit_c_call("mod_op", a, b);
-    if (b->i == 0) {
-        printf("Error: Modulo by zero\n");
-        return mk_int(0);
-    }
+    if (a->tag != T_INT || b->tag != T_INT) return NIL;
+    if (b->i == 0) return mk_int(0);
     return mk_int(a->i % b->i);
 }
 
@@ -537,8 +554,8 @@ Value* prim_mod(Value* args, Value* menv) {
 
 Value* prim_eq(Value* args, Value* menv) {
     (void)menv;
-    Value* a = car(args);
-    Value* b = car(cdr(args));
+    Value* a; Value* b;
+    if (!get_two_args(args, &a, &b)) return NIL;
     if (is_code(a) || is_code(b)) return emit_c_call("eq_op", a, b);
     // Handle different types
     if (a->tag == T_INT && b->tag == T_INT) {
@@ -553,33 +570,37 @@ Value* prim_eq(Value* args, Value* menv) {
 
 Value* prim_lt(Value* args, Value* menv) {
     (void)menv;
-    Value* a = car(args);
-    Value* b = car(cdr(args));
+    Value* a; Value* b;
+    if (!get_two_args(args, &a, &b)) return NIL;
     if (is_code(a) || is_code(b)) return emit_c_call("lt_op", a, b);
+    if (a->tag != T_INT || b->tag != T_INT) return NIL;
     return a->i < b->i ? SYM_T : NIL;
 }
 
 Value* prim_gt(Value* args, Value* menv) {
     (void)menv;
-    Value* a = car(args);
-    Value* b = car(cdr(args));
+    Value* a; Value* b;
+    if (!get_two_args(args, &a, &b)) return NIL;
     if (is_code(a) || is_code(b)) return emit_c_call("gt_op", a, b);
+    if (a->tag != T_INT || b->tag != T_INT) return NIL;
     return a->i > b->i ? SYM_T : NIL;
 }
 
 Value* prim_le(Value* args, Value* menv) {
     (void)menv;
-    Value* a = car(args);
-    Value* b = car(cdr(args));
+    Value* a; Value* b;
+    if (!get_two_args(args, &a, &b)) return NIL;
     if (is_code(a) || is_code(b)) return emit_c_call("le_op", a, b);
+    if (a->tag != T_INT || b->tag != T_INT) return NIL;
     return a->i <= b->i ? SYM_T : NIL;
 }
 
 Value* prim_ge(Value* args, Value* menv) {
     (void)menv;
-    Value* a = car(args);
-    Value* b = car(cdr(args));
+    Value* a; Value* b;
+    if (!get_two_args(args, &a, &b)) return NIL;
     if (is_code(a) || is_code(b)) return emit_c_call("ge_op", a, b);
+    if (a->tag != T_INT || b->tag != T_INT) return NIL;
     return a->i >= b->i ? SYM_T : NIL;
 }
 
@@ -587,40 +608,44 @@ Value* prim_ge(Value* args, Value* menv) {
 
 Value* prim_not(Value* args, Value* menv) {
     (void)menv;
+    if (!args || is_nil(args)) return SYM_T;  // not of nothing is true
     Value* a = car(args);
+    if (!a) return SYM_T;
     if (is_code(a)) return emit_c_call("not_op", a, NIL);
     return is_nil(a) ? SYM_T : NIL;
 }
 
 // -- List Primitives --
 
+// Helper: safely get one arg
+static Value* get_one_arg(Value* args) {
+    if (!args || is_nil(args)) return NULL;
+    return car(args);
+}
+
 Value* prim_car(Value* args, Value* menv) {
     (void)menv;
-    Value* a = car(args);
+    Value* a = get_one_arg(args);
+    if (!a) return NIL;
     if (is_code(a)) {
-        char buf[512];
-        sprintf(buf, "(%s)->a", a->s);
-        return mk_code(buf);
+        DString* ds = ds_new();
+        ds_printf(ds, "(%s)->a", a->s);
+        return mk_code(ds_take(ds));
     }
-    if (a->tag != T_CELL) {
-        printf("Error: car expects pair\n");
-        return NIL;
-    }
+    if (a->tag != T_CELL) return NIL;
     return car(a);
 }
 
 Value* prim_cdr(Value* args, Value* menv) {
     (void)menv;
-    Value* a = car(args);
+    Value* a = get_one_arg(args);
+    if (!a) return NIL;
     if (is_code(a)) {
-        char buf[512];
-        sprintf(buf, "(%s)->b", a->s);
-        return mk_code(buf);
+        DString* ds = ds_new();
+        ds_printf(ds, "(%s)->b", a->s);
+        return mk_code(ds_take(ds));
     }
-    if (a->tag != T_CELL) {
-        printf("Error: cdr expects pair\n");
-        return NIL;
-    }
+    if (a->tag != T_CELL) return NIL;
     return cdr(a);
 }
 
@@ -635,11 +660,12 @@ Value* prim_snd(Value* args, Value* menv) {
 
 Value* prim_null(Value* args, Value* menv) {
     (void)menv;
-    Value* a = car(args);
+    Value* a = get_one_arg(args);
+    if (!a) return SYM_T;  // null? of nothing is true
     if (is_code(a)) {
-        char buf[512];
-        sprintf(buf, "is_nil(%s)", a->s);
-        return mk_code(buf);
+        DString* ds = ds_new();
+        ds_printf(ds, "is_nil(%s)", a->s);
+        return mk_code(ds_take(ds));
     }
     return is_nil(a) ? SYM_T : NIL;
 }

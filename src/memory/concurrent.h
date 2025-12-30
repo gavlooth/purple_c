@@ -1,5 +1,6 @@
 // Phase 11: Concurrency Support
 // Ownership transfer semantics + atomic RC for shared data
+// Constraint: no stop-the-world; synchronization is local to shared objects/channels.
 // Sources: SOTER (PLDI 2011), Concurrent Deferred RC (PLDI 2021)
 
 #ifndef CONCURRENT_H

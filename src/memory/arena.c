@@ -6,10 +6,12 @@
 
 Arena* arena_create(size_t block_size) {
     Arena* a = malloc(sizeof(Arena));
+    if (!a) return NULL;
     a->block_size = block_size > 0 ? block_size : 4096;
     a->blocks = NULL;
     a->current = NULL;
     a->id = 0;
+    a->externals = NULL;
     return a;
 }
 
@@ -25,7 +27,12 @@ void* arena_alloc(Arena* a, size_t size) {
         if (size > bs) bs = size;
 
         ArenaBlock* b = malloc(sizeof(ArenaBlock));
+        if (!b) return NULL;
         b->memory = malloc(bs);
+        if (!b->memory) {
+            free(b);
+            return NULL;
+        }
         b->size = bs;
         b->used = 0;
         b->next = a->blocks;
@@ -40,6 +47,8 @@ void* arena_alloc(Arena* a, size_t size) {
 
 void arena_destroy(Arena* a) {
     if (!a) return;
+
+    arena_release_externals(a);
 
     ArenaBlock* b = a->blocks;
     while (b) {
@@ -60,6 +69,27 @@ void arena_reset(Arena* a) {
         b = b->next;
     }
     a->current = a->blocks;
+}
+
+void arena_register_external(Arena* a, void* ptr, ArenaReleaseFn release) {
+    if (!a || !ptr || !release) return;
+    ArenaExternal* ext = malloc(sizeof(ArenaExternal));
+    ext->ptr = ptr;
+    ext->release = release;
+    ext->next = a->externals;
+    a->externals = ext;
+}
+
+void arena_release_externals(Arena* a) {
+    if (!a) return;
+    ArenaExternal* ext = a->externals;
+    while (ext) {
+        ArenaExternal* next = ext->next;
+        ext->release(ext->ptr);
+        free(ext);
+        ext = next;
+    }
+    a->externals = NULL;
 }
 
 // -- Scope Detection --
@@ -103,14 +133,44 @@ void gen_arena_runtime(void) {
     printf("    ArenaBlock* current;\n");
     printf("    ArenaBlock* blocks;\n");
     printf("    size_t block_size;\n");
+    printf("    struct ArenaExternal* externals;\n");
     printf("} Arena;\n\n");
+
+    printf("typedef void (*ArenaReleaseFn)(void*);\n");
+    printf("typedef struct ArenaExternal {\n");
+    printf("    void* ptr;\n");
+    printf("    ArenaReleaseFn release;\n");
+    printf("    struct ArenaExternal* next;\n");
+    printf("} ArenaExternal;\n\n");
 
     printf("Arena* arena_create(size_t block_size) {\n");
     printf("    Arena* a = malloc(sizeof(Arena));\n");
     printf("    a->block_size = block_size ? block_size : 4096;\n");
     printf("    a->blocks = NULL;\n");
     printf("    a->current = NULL;\n");
+    printf("    a->externals = NULL;\n");
     printf("    return a;\n");
+    printf("}\n\n");
+
+    printf("void arena_register_external(Arena* a, void* ptr, ArenaReleaseFn release) {\n");
+    printf("    if (!a || !ptr || !release) return;\n");
+    printf("    ArenaExternal* ext = malloc(sizeof(ArenaExternal));\n");
+    printf("    ext->ptr = ptr;\n");
+    printf("    ext->release = release;\n");
+    printf("    ext->next = a->externals;\n");
+    printf("    a->externals = ext;\n");
+    printf("}\n\n");
+
+    printf("void arena_release_externals(Arena* a) {\n");
+    printf("    if (!a) return;\n");
+    printf("    ArenaExternal* ext = a->externals;\n");
+    printf("    while (ext) {\n");
+    printf("        ArenaExternal* next = ext->next;\n");
+    printf("        ext->release(ext->ptr);\n");
+    printf("        free(ext);\n");
+    printf("        ext = next;\n");
+    printf("    }\n");
+    printf("    a->externals = NULL;\n");
     printf("}\n\n");
 
     printf("void* arena_alloc(Arena* a, size_t size) {\n");
@@ -133,6 +193,7 @@ void gen_arena_runtime(void) {
 
     printf("void arena_destroy(Arena* a) {\n");
     printf("    if (!a) return;\n");
+    printf("    arena_release_externals(a);\n");
     printf("    ArenaBlock* b = a->blocks;\n");
     printf("    while (b) {\n");
     printf("        ArenaBlock* next = b->next;\n");
@@ -147,14 +208,14 @@ void gen_arena_runtime(void) {
     printf("// Arena-aware allocators\n");
     printf("Obj* arena_mk_int(Arena* a, long val) {\n");
     printf("    Obj* o = arena_alloc(a, sizeof(Obj));\n");
-    printf("    o->mark = 1; o->scc_id = -1; o->is_pair = 0;\n");
+    printf("    o->mark = 1; o->scc_id = -1; o->is_pair = 0; o->scan_tag = 0;\n");
     printf("    o->i = val;\n");
     printf("    return o;\n");
     printf("}\n\n");
 
     printf("Obj* arena_mk_pair(Arena* a, Obj* car, Obj* cdr) {\n");
     printf("    Obj* o = arena_alloc(a, sizeof(Obj));\n");
-    printf("    o->mark = 1; o->scc_id = -1; o->is_pair = 1;\n");
+    printf("    o->mark = 1; o->scc_id = -1; o->is_pair = 1; o->scan_tag = 0;\n");
     printf("    o->a = car; o->b = cdr;\n");
     printf("    return o;\n");
     printf("}\n\n");

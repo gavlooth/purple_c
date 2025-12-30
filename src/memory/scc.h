@@ -2,10 +2,12 @@
 #define PURPLE_SCC_H
 
 #include "../types.h"
+#include "../util/hashmap.h"
 
 // -- Phase 6b: SCC-based RC (ISMM 2024) --
 // Reference Counting Deeply Immutable Data Structures with Cycles
-// For frozen (immutable) cyclic structures
+// For frozen (immutable) cyclic structures.
+// Constraint: no stop-the-world; SCC computation is local to the frozen subgraph.
 
 // Runtime object with SCC support
 typedef struct Obj {
@@ -36,14 +38,16 @@ typedef struct SCC {
     int capacity;
     int ref_count;      // Single RC for entire SCC
     int frozen;         // 1 if frozen (immutable)
-    struct SCC* next;
+    struct SCC* next;        // For registry list (cleanup)
+    struct SCC* result_next; // For result list from compute_sccs
 } SCC;
 
 // SCC Registry
 typedef struct SCCRegistry {
     SCC* sccs;
     int next_id;
-    SCCNode* node_map;  // For Tarjan's algorithm
+    SCCNode* node_map;    // Linked list of all nodes (for cleanup)
+    HashMap* node_lookup; // O(1) lookup: Obj* -> SCCNode*
     SCCNode* stack;
     int index;
 } SCCRegistry;

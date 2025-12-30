@@ -19,6 +19,7 @@ const char* shape_to_string(Shape s) {
 
 ShapeContext* mk_shape_context(void) {
     ShapeContext* ctx = malloc(sizeof(ShapeContext));
+    if (!ctx) return NULL;
     ctx->shapes = NULL;
     ctx->changed = 0;
     ctx->next_alias_group = 1;
@@ -48,7 +49,12 @@ void add_shape(ShapeContext* ctx, const char* name, Shape shape) {
         return;
     }
     ShapeInfo* s = malloc(sizeof(ShapeInfo));
+    if (!s) return;
     s->var_name = strdup(name);
+    if (!s->var_name) {
+        free(s);
+        return;
+    }
     s->shape = shape;
     s->confidence = 100;
     s->alias_group = ctx->next_alias_group++;
@@ -161,6 +167,37 @@ void analyze_shapes_expr(Value* expr, ShapeContext* ctx) {
                     return;
                 }
 
+                // LETREC binding (potentially cyclic)
+                if (strcmp(op->s, "letrec") == 0) {
+                    Value* bindings = car(args);
+                    Value* body = car(cdr(args));
+
+                    // Pre-mark all bound symbols as cyclic
+                    Value* b = bindings;
+                    while (!is_nil(b)) {
+                        Value* bind = car(b);
+                        Value* sym = car(bind);
+                        add_shape(ctx, sym->s, SHAPE_CYCLIC);
+                        b = cdr(b);
+                    }
+
+                    // Analyze binding expressions (will join with CYCLIC)
+                    b = bindings;
+                    while (!is_nil(b)) {
+                        Value* bind = car(b);
+                        Value* sym = car(bind);
+                        Value* val_expr = car(cdr(bind));
+
+                        analyze_shapes_expr(val_expr, ctx);
+                        add_shape(ctx, sym->s, ctx->result_shape);
+
+                        b = cdr(b);
+                    }
+
+                    analyze_shapes_expr(body, ctx);
+                    return;
+                }
+
                 // SET! can create cycles
                 if (strcmp(op->s, "set!") == 0) {
                     Value* target = car(args);
@@ -200,15 +237,17 @@ void analyze_shapes_expr(Value* expr, ShapeContext* ctx) {
                 }
             }
 
-            // Default: analyze all subexpressions
+            // Default: analyze all subexpressions and join their shapes
+            Shape result = SHAPE_UNKNOWN;
             analyze_shapes_expr(op, ctx);
+            result = shape_join(result, ctx->result_shape);
             while (!is_nil(args)) {
                 analyze_shapes_expr(car(args), ctx);
+                result = shape_join(result, ctx->result_shape);
                 args = cdr(args);
             }
-            if (ctx->result_shape == SHAPE_UNKNOWN) {
-                ctx->result_shape = SHAPE_DAG;
-            }
+            // Default to DAG if still unknown (conservative)
+            ctx->result_shape = (result == SHAPE_UNKNOWN) ? SHAPE_DAG : result;
             break;
         }
 
@@ -223,6 +262,8 @@ const char* shape_free_strategy(Shape s) {
         case SHAPE_TREE: return "free_tree";
         case SHAPE_DAG: return "dec_ref";
         case SHAPE_CYCLIC: return "deferred_release";
-        default: return "free_obj";
+        // SHAPE_UNKNOWN defaults to dec_ref (safe for both trees and DAGs)
+        // Using free_tree for unknown shapes risks infinite loops on cycles
+        default: return "dec_ref";
     }
 }

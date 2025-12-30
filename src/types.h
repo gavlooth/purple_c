@@ -63,6 +63,12 @@ char* list_to_str(Value* v);
 int sym_eq(Value* s1, Value* s2);
 int sym_eq_str(Value* s1, const char* s2);
 
+// -- Compiler Arena (Phase 12) --
+// All compiler allocations use this arena for bulk deallocation
+void compiler_arena_init(void);
+void compiler_arena_cleanup(void);
+void compiler_arena_register_string(char* s);
+
 // -- List Construction --
 #define LIST1(a) mk_cell(a, NIL)
 #define LIST2(a,b) mk_cell(a, mk_cell(b, NIL))

@@ -63,8 +63,11 @@ SCC* create_scc(SCCRegistry* reg) {
     scc->capacity = 16;
     scc->ref_count = 1;
     scc->frozen = 0;
+    // Link into registry list for cleanup (using 'next')
     scc->next = reg->sccs;
     reg->sccs = scc;
+    // Separate field for result list (using 'result_next')
+    scc->result_next = NULL;
     return scc;
 }
 
@@ -281,7 +284,7 @@ void tarjan_dfs(SCCRegistry* reg, Obj* v, SCC** result) {
                     }
                 } while (w && w != node);
 
-                scc->next = *result;
+                scc->result_next = *result;
                 *result = scc;
             }
 
@@ -379,6 +382,7 @@ void gen_scc_runtime(void) {
     printf("    int capacity;\n");
     printf("    int ref_count;\n");
     printf("    struct SCC* next;\n");
+    printf("    struct SCC* result_next;\n");
     printf("} SCC;\n\n");
 
     printf("static int SCC_NEXT_ID = 0;\n\n");
@@ -568,7 +572,7 @@ void gen_scc_runtime(void) {
     printf("                scc->member_count = 0;\n");
     printf("                scc->capacity = 16;\n");
     printf("                scc->ref_count = 1;\n");
-    printf("                scc->next = *result;\n");
+    printf("                scc->result_next = *result;\n");
     printf("                *result = scc;\n\n");
 
     printf("                Obj* w;\n");
@@ -609,6 +613,7 @@ void gen_scc_runtime(void) {
     printf("    scc->ref_count--;\n");
     printf("    if (scc->ref_count == 0) {\n");
     printf("        for (int i = 0; i < scc->member_count; i++) {\n");
+    printf("            invalidate_weak_refs_for(scc->members[i]);\n");
     printf("            free(scc->members[i]);\n");
     printf("        }\n");
     printf("        free(scc->members);\n");

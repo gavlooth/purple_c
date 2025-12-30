@@ -72,7 +72,6 @@ void gen_concurrent_runtime(void) {
     printf("// Atomic increment (for shared objects)\n");
     printf("void conc_inc_ref(ConcObj* obj) {\n");
     printf("    if (!obj) return;\n");
-    printf("    if (obj->is_immutable) return;  // Immutable needs no sync\n");
     printf("    atomic_fetch_add(&obj->rc, 1);\n");
     printf("}\n\n");
 
@@ -80,7 +79,6 @@ void gen_concurrent_runtime(void) {
     printf("// Atomic decrement (may trigger deferred cleanup)\n");
     printf("void conc_dec_ref(ConcObj* obj) {\n");
     printf("    if (!obj) return;\n");
-    printf("    if (obj->is_immutable) return;  // Handled by SCC\n");
     printf("    int old = atomic_fetch_sub(&obj->rc, 1);\n");
     printf("    if (old == 1) {\n");
     printf("        // Last reference - defer cleanup\n");
@@ -145,8 +143,9 @@ void gen_concurrent_runtime(void) {
     printf("}\n\n");
 
     // Send with ownership transfer
-    printf("// Send message (transfers ownership)\n");
+    printf("// Send message (transfers ownership, increments RC for safe sender cleanup)\n");
     printf("int channel_send(MsgChannel* ch, ConcObj* obj) {\n");
+    printf("    if (!obj) return -1;\n");
     printf("    if (atomic_load(&ch->closed)) return -1;\n");
     printf("    pthread_mutex_lock(&ch->mutex);\n");
     printf("    int tail = atomic_load(&ch->tail);\n");
@@ -158,7 +157,8 @@ void gen_concurrent_runtime(void) {
     printf("            return -1;\n");
     printf("        }\n");
     printf("    }\n");
-    printf("    // Transfer ownership: sender gives up reference\n");
+    printf("    // Increment RC so sender can safely dec_ref after send\n");
+    printf("    atomic_fetch_add(&obj->rc, 1);\n");
     printf("    obj->owner_thread = -1;  // Mark as in-transit\n");
     printf("    ch->buffer[tail] = obj;\n");
     printf("    atomic_store(&ch->tail, (tail + 1) %% ch->capacity);\n");
@@ -239,6 +239,7 @@ void gen_concurrent_runtime(void) {
     printf("// Freeze object for immutable sharing (no sync needed)\n");
     printf("void conc_freeze(ConcObj* obj) {\n");
     printf("    if (!obj) return;\n");
+    printf("    if (obj->is_immutable) return;\n");
     printf("    obj->is_immutable = 1;\n");
     printf("    obj->owner_thread = -1;  // Shared\n");
     printf("    if (obj->is_pair) {\n");

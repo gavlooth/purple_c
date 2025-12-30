@@ -10,11 +10,18 @@ static int next_pad_id = 0;
 
 // Track a new allocation
 void track_alloc(ExceptionContext* ctx, const char* var, const char* type) {
-    if (!ctx) return;
+    if (!ctx || !var || !type) return;
 
     LiveAlloc* alloc = malloc(sizeof(LiveAlloc));
+    if (!alloc) return;
     alloc->var_name = strdup(var);
     alloc->type_name = strdup(type);
+    if (!alloc->var_name || !alloc->type_name) {
+        free(alloc->var_name);
+        free(alloc->type_name);
+        free(alloc);
+        return;
+    }
     alloc->program_point = 0;  // Would be set by caller
     alloc->next = ctx->live_allocs;
     ctx->live_allocs = alloc;
@@ -48,6 +55,7 @@ LandingPad* create_landing_pad(ExceptionContext* ctx) {
     if (!ctx) return NULL;
 
     LandingPad* pad = malloc(sizeof(LandingPad));
+    if (!pad) return NULL;
     pad->id = next_pad_id++;
     pad->try_start = 0;
     pad->try_end = 0;
@@ -58,11 +66,15 @@ LandingPad* create_landing_pad(ExceptionContext* ctx) {
     LiveAlloc* alloc = ctx->live_allocs;
     while (alloc) {
         CleanupAction* action = malloc(sizeof(CleanupAction));
+        if (!action) break;  // Stop on allocation failure
         action->var_name = strdup(alloc->var_name);
-
-        // Choose cleanup function based on type
-        // In real implementation, this would use shape analysis
         action->cleanup_fn = strdup("dec_ref");
+        if (!action->var_name || !action->cleanup_fn) {
+            free(action->var_name);
+            free(action->cleanup_fn);
+            free(action);
+            break;
+        }
 
         action->next = pad->cleanups;
         pad->cleanups = action;

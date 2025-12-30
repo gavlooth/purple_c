@@ -12,11 +12,18 @@ This project demonstrates two advanced compiler techniques working in harmony:
     *   **Compiler**: When evaluating symbolic `Code` values.
     This allows the same codebase to run programs immediately or compiling them to C, simply by "lifting" inputs.
 
-2.  **ASAP Memory Management**:
+2.  **ASAP Memory Management (Base Engine)**:
     The compiled output uses a static memory management regime instead of a Garbage Collector:
     *   **SCAN Generation**: Type-specific scanner functions (`scan_List`, etc.) are generated at compile-time (based on "Paths").
     *   **CLEAN Injection**: The compiler performs a linear-scan approximation to detect dead variables and injects `free_obj()` calls automatically at the end of their scope.
     *   **Deferred Freeing**: Runtime optimization to prevent double-frees during complex graph traversals.
+
+3.  **Optimizations Layered on ASAP** (no stop-the-world):
+    *   SCC-based RC for frozen cycles, deferred RC for mutable cycles
+    *   DAG RC (`inc_ref`/`dec_ref`) for shared acyclic structures
+    *   Weak references (explicit invalidation on free)
+    *   Perceus-style reuse, arenas, concurrency ownership transfer
+    *   All runtime work is **local** or **bounded**; no global pauses
 
 ## Features
 
@@ -50,9 +57,13 @@ make test
 
 ## Structure
 
-*   `main.c`: Single-file implementation (Lexer, Parser, AST, Evaluator, Compiler, Runtime).
+*   `src/`: Compiler, evaluator, analyses, and memory engines.
 *   `examples/`: Sample Purple programs.
 *   `tests.sh`: Regression test suite.
+
+## Architecture Notes
+
+See `ARCHITECTURE.md` for the memory-engine layering, invariants, and the explicit **no stop‑the‑world** constraint.
 
 ## References
 

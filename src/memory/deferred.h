@@ -2,10 +2,11 @@
 #define PURPLE_DEFERRED_H
 
 #include "../types.h"
+#include "../util/hashmap.h"
 
 // -- Phase 7: Deferred RC Fallback --
 // For mutable cyclic structures that never freeze
-// Bounded O(k) processing at safe points
+// Bounded O(k) processing at safe points; no stop-the-world.
 
 // Deferred decrement entry
 typedef struct DeferredDec {
@@ -17,9 +18,10 @@ typedef struct DeferredDec {
 // Deferred processing context
 typedef struct DeferredContext {
     DeferredDec* pending;
+    HashMap* obj_lookup;  // O(1) lookup: obj -> DeferredDec*
     int pending_count;
-    int batch_size;      // Max decrements per safe point
-    int total_deferred;  // Statistics
+    int batch_size;       // Max decrements per safe point
+    int total_deferred;   // Statistics
 } DeferredContext;
 
 // Context management

@@ -8,6 +8,7 @@ AnalysisContext* g_analysis_ctx = NULL;
 
 AnalysisContext* mk_analysis_ctx(void) {
     AnalysisContext* ctx = malloc(sizeof(AnalysisContext));
+    if (!ctx) return NULL;
     ctx->vars = NULL;
     ctx->current_depth = 0;
     ctx->in_lambda = 0;
@@ -37,9 +38,14 @@ VarUsage* find_var(AnalysisContext* ctx, const char* name) {
 }
 
 void add_var(AnalysisContext* ctx, const char* name) {
-    if (!ctx) return;
+    if (!ctx || !name) return;
     VarUsage* v = malloc(sizeof(VarUsage));
+    if (!v) return;
     v->name = strdup(name);
+    if (!v->name) {
+        free(v);
+        return;
+    }
     v->use_count = 0;
     v->last_use_depth = -1;
     v->escape_class = ESCAPE_NONE;
@@ -158,6 +164,43 @@ void analyze_escape(Value* expr, AnalysisContext* ctx, EscapeClass context) {
                         bindings = cdr(bindings);
                     }
                     analyze_escape(body, ctx, context);
+                } else if (strcmp(op->s, "letrec") == 0) {
+                    // letrec: bindings can reference each other, potential cycles
+                    Value* bindings = car(args);
+                    Value* body = car(cdr(args));
+                    // First pass: mark all bound vars as potentially escaping
+                    Value* b = bindings;
+                    while (!is_nil(b)) {
+                        Value* bind = car(b);
+                        if (!is_nil(bind)) {
+                            Value* sym = car(bind);
+                            if (sym && sym->tag == T_SYM) {
+                                VarUsage* v = find_var(ctx, sym->s);
+                                if (v) v->escape_class = ESCAPE_GLOBAL;
+                            }
+                        }
+                        b = cdr(b);
+                    }
+                    // Analyze binding expressions
+                    while (!is_nil(bindings)) {
+                        Value* bind = car(bindings);
+                        if (!is_nil(bind) && !is_nil(cdr(bind))) {
+                            analyze_escape(car(cdr(bind)), ctx, ESCAPE_GLOBAL);
+                        }
+                        bindings = cdr(bindings);
+                    }
+                    analyze_escape(body, ctx, context);
+                } else if (strcmp(op->s, "set!") == 0) {
+                    // set! mutates variable - mark as escaping
+                    Value* target = car(args);
+                    if (target && target->tag == T_SYM) {
+                        VarUsage* v = find_var(ctx, target->s);
+                        if (v) v->escape_class = ESCAPE_GLOBAL;
+                    }
+                    // Analyze the value being assigned
+                    if (!is_nil(cdr(args))) {
+                        analyze_escape(car(cdr(args)), ctx, ESCAPE_GLOBAL);
+                    }
                 } else if (strcmp(op->s, "cons") == 0) {
                     while (!is_nil(args)) {
                         analyze_escape(car(args), ctx, ESCAPE_ARG);
@@ -168,6 +211,13 @@ void analyze_escape(Value* expr, AnalysisContext* ctx, EscapeClass context) {
                         analyze_escape(car(args), ctx, ESCAPE_ARG);
                         args = cdr(args);
                     }
+                }
+            } else {
+                // Non-symbol operator (higher-order) - analyze it too
+                analyze_escape(op, ctx, ESCAPE_ARG);
+                while (!is_nil(args)) {
+                    analyze_escape(car(args), ctx, ESCAPE_ARG);
+                    args = cdr(args);
                 }
             }
             break;
@@ -209,8 +259,12 @@ void find_free_vars(Value* expr, Value* bound, char*** free_vars, int* count) {
             for (int i = 0; i < *count; i++) {
                 if (strcmp((*free_vars)[i], expr->s) == 0) return;
             }
-            *free_vars = realloc(*free_vars, (*count + 1) * sizeof(char*));
-            (*free_vars)[*count] = strdup(expr->s);
+            char** new_vars = realloc(*free_vars, (*count + 1) * sizeof(char*));
+            if (!new_vars) return;  // Keep existing on failure
+            *free_vars = new_vars;
+            char* dup = strdup(expr->s);
+            if (!dup) return;
+            (*free_vars)[*count] = dup;
             (*count)++;
         }
         return;

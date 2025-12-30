@@ -30,6 +30,7 @@ typedef struct AnalysisContext {
 
 // Context management
 AnalysisContext* mk_analysis_ctx(void);
+void free_analysis_ctx(AnalysisContext* ctx);
 VarUsage* find_var(AnalysisContext* ctx, const char* name);
 void add_var(AnalysisContext* ctx, const char* name);
 void record_use(AnalysisContext* ctx, const char* name);

@@ -11,10 +11,13 @@ MEMORY_DIR = $(SRC_DIR)/memory
 CODEGEN_DIR = $(SRC_DIR)/codegen
 EVAL_DIR = $(SRC_DIR)/eval
 PARSER_DIR = $(SRC_DIR)/parser
+UTIL_DIR = $(SRC_DIR)/util
 
 # Source files
 SRCS = $(SRC_DIR)/main.c \
        $(SRC_DIR)/types.c \
+       $(UTIL_DIR)/dstring.c \
+       $(UTIL_DIR)/hashmap.c \
        $(ANALYSIS_DIR)/escape.c \
        $(ANALYSIS_DIR)/shape.c \
        $(ANALYSIS_DIR)/dps.c \

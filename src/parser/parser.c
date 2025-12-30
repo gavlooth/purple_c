@@ -19,7 +19,7 @@ void set_parse_input(const char* input) {
 // -- Parsing --
 
 void skip_ws(void) {
-    while (parse_ptr && isspace(*parse_ptr)) parse_ptr++;
+    while (parse_ptr && isspace((unsigned char)*parse_ptr)) parse_ptr++;
 }
 
 // Iterative Parser Context Frame
@@ -143,12 +143,12 @@ Value* parse(void) {
             }
             else {
                 // Atom (int or sym)
-                if (isdigit(*parse_ptr) || (*parse_ptr == '-' && isdigit(parse_ptr[1]))) {
+                if (isdigit((unsigned char)*parse_ptr) || (*parse_ptr == '-' && isdigit((unsigned char)parse_ptr[1]))) {
                     long i = strtol(parse_ptr, (char**)&parse_ptr, 10);
                     current_result = mk_int(i);
                 } else {
                     const char* start = parse_ptr;
-                    while (*parse_ptr && !isspace(*parse_ptr) && *parse_ptr != ')' && *parse_ptr != '(') {
+                    while (*parse_ptr && !isspace((unsigned char)*parse_ptr) && *parse_ptr != ')' && *parse_ptr != '(') {
                         parse_ptr++;
                     }
                     char* s = strndup(start, parse_ptr - start);
