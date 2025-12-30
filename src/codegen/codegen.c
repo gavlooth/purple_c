@@ -1,6 +1,7 @@
 #include "codegen.h"
 #include "../memory/scc.h"
 #include "../memory/deferred.h"
+#include "../util/dstring.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -20,30 +21,35 @@ static VisitState* VISIT_STATES = NULL;
 // -- Code Emission --
 
 Value* emit_c_call(const char* fn, Value* a, Value* b) {
-    char buf[1024];
     char* sa = (a->tag == T_CODE) ? a->s : val_to_str(a);
     char* sb = (b->tag == T_CODE) ? b->s : val_to_str(b);
 
-    char ca[512], cb[512];
-    if (a->tag == T_INT) sprintf(ca, "mk_int(%ld)", a->i);
-    else strcpy(ca, sa);
+    DString* ca = ds_new();
+    DString* cb = ds_new();
 
-    if (b->tag == T_INT) sprintf(cb, "mk_int(%ld)", b->i);
-    else strcpy(cb, sb);
+    if (a->tag == T_INT) ds_printf(ca, "mk_int(%ld)", a->i);
+    else ds_append(ca, sa);
 
-    sprintf(buf, "%s(%s, %s)", fn, ca, cb);
+    if (b->tag == T_INT) ds_printf(cb, "mk_int(%ld)", b->i);
+    else ds_append(cb, sb);
+
+    DString* ds = ds_new();
+    ds_printf(ds, "%s(%s, %s)", fn, ds_cstr(ca), ds_cstr(cb));
 
     if (a->tag != T_CODE) free(sa);
     if (b->tag != T_CODE) free(sb);
-    return mk_code(buf);
+
+    ds_free(ca);
+    ds_free(cb);
+    return mk_code(ds_take(ds));
 }
 
 Value* lift_value(Value* v) {
     if (v->tag == T_CODE) return v;
     if (v->tag == T_INT) {
-        char buf[64];
-        sprintf(buf, "mk_int(%ld)", v->i);
-        return mk_code(buf);
+        DString* ds = ds_new();
+        ds_printf(ds, "mk_int(%ld)", v->i);
+        return mk_code(ds_take(ds));
     }
     return v;
 }
@@ -54,8 +60,8 @@ void gen_asap_scanner(const char* type_name, int is_list) {
     printf("\n// [ASAP] Type-Aware Scanner for %s\n", type_name);
     printf("// Note: ASAP uses compile-time free injection, not runtime GC\n");
     printf("void scan_%s(Obj* x) {\n", type_name);
-    printf("  if (!x || x->mark) return;\n");
-    printf("  x->mark = 1;\n");
+    printf("  if (!x || x->scan_tag) return;\n");
+    printf("  x->scan_tag = 1;\n");
     if (is_list) {
         printf("  scan_%s(x->a);\n", type_name);
         printf("  scan_%s(x->b);\n", type_name);
@@ -63,8 +69,8 @@ void gen_asap_scanner(const char* type_name, int is_list) {
     printf("}\n\n");
 
     printf("void clear_marks_%s(Obj* x) {\n", type_name);
-    printf("  if (!x || !x->mark) return;\n");
-    printf("  x->mark = 0;\n");
+    printf("  if (!x || !x->scan_tag) return;\n");
+    printf("  x->scan_tag = 0;\n");
     if (is_list) {
         printf("  clear_marks_%s(x->a);\n", type_name);
         printf("  clear_marks_%s(x->b);\n", type_name);
@@ -75,8 +81,14 @@ void gen_asap_scanner(const char* type_name, int is_list) {
 // -- Type Registry --
 
 void register_type(const char* name, TypeField* fields, int count) {
+    if (!name) return;
     TypeDef* t = malloc(sizeof(TypeDef));
+    if (!t) return;
     t->name = strdup(name);
+    if (!t->name) {
+        free(t);
+        return;
+    }
     t->fields = fields;
     t->field_count = count;
     t->is_recursive = 0;
@@ -112,9 +124,17 @@ void build_ownership_graph(void) {
         for (int i = 0; i < t->field_count; i++) {
             if (t->fields[i].is_scannable) {
                 OwnershipEdge* e = malloc(sizeof(OwnershipEdge));
+                if (!e) continue;
                 e->from_type = strdup(t->name);
                 e->field_name = strdup(t->fields[i].name);
                 e->to_type = strdup(t->fields[i].type);
+                if (!e->from_type || !e->field_name || !e->to_type) {
+                    free(e->from_type);
+                    free(e->field_name);
+                    free(e->to_type);
+                    free(e);
+                    continue;
+                }
                 e->is_back_edge = 0;
                 e->next = OWNERSHIP_GRAPH;
                 OWNERSHIP_GRAPH = e;
@@ -140,7 +160,12 @@ static void add_visit_state(const char* name, int color) {
         return;
     }
     VisitState* v = malloc(sizeof(VisitState));
+    if (!v) return;
     v->type_name = strdup(name);
+    if (!v->type_name) {
+        free(v);
+        return;
+    }
     v->color = color;
     v->next = VISIT_STATES;
     VISIT_STATES = v;
@@ -159,7 +184,7 @@ static void mark_field_weak(const char* type_name, const char* field_name) {
     }
 }
 
-static void detect_back_edges_dfs(const char* type_name, const char* path[], int path_len) {
+static void detect_back_edges_dfs(const char* type_name, const char*** path, int* path_len, int* path_cap) {
     VisitState* v = find_visit_state(type_name);
 
     if (v && v->color == 1) return;
@@ -167,37 +192,51 @@ static void detect_back_edges_dfs(const char* type_name, const char* path[], int
 
     add_visit_state(type_name, 1);
 
-    path[path_len] = type_name;
-    path_len++;
+    // Ensure path capacity
+    if (*path_len >= *path_cap) {
+        *path_cap *= 2;
+        *path = realloc(*path, (*path_cap) * sizeof(char*));
+        if (!*path) return; // Allocation failed
+    }
+
+    (*path)[*path_len] = type_name;
+    (*path_len)++;
 
     OwnershipEdge* e = OWNERSHIP_GRAPH;
     while (e) {
         if (strcmp(e->from_type, type_name) == 0) {
-            for (int i = 0; i < path_len; i++) {
-                if (strcmp(path[i], e->to_type) == 0) {
+            for (int i = 0; i < *path_len; i++) {
+                if (strcmp((*path)[i], e->to_type) == 0) {
                     e->is_back_edge = 1;
                     mark_field_weak(e->from_type, e->field_name);
                 }
             }
-            detect_back_edges_dfs(e->to_type, path, path_len);
+            detect_back_edges_dfs(e->to_type, path, path_len, path_cap);
         }
         e = e->next;
     }
 
+    (*path_len)--;
     add_visit_state(type_name, 2);
 }
 
 void analyze_back_edges(void) {
-    const char* path[256];
+    int path_cap = 256;
+    int path_len = 0;
+    const char** path = malloc(path_cap * sizeof(char*));
+    if (!path) return;
+
     VISIT_STATES = NULL;
 
     TypeDef* t = TYPE_REGISTRY;
     while (t) {
         if (find_visit_state(t->name) == NULL) {
-            detect_back_edges_dfs(t->name, path, 0);
+            detect_back_edges_dfs(t->name, &path, &path_len, &path_cap);
         }
         t = t->next;
     }
+
+    free(path);
 }
 
 // -- Field-Aware Scanner --
@@ -211,8 +250,8 @@ void gen_field_aware_scanner(const char* type_name) {
 
     printf("\n// [ASAP] Field-Aware Scanner for %s\n", type_name);
     printf("void scan_%s(%s* x) {\n", type_name, type_name);
-    printf("  if (!x || x->mark) return;\n");
-    printf("  x->mark = 1;\n");
+    printf("  if (!x || x->scan_tag) return;\n");
+    printf("  x->scan_tag = 1;\n");
 
     for (int i = 0; i < t->field_count; i++) {
         if (t->fields[i].is_scannable) {
@@ -229,6 +268,7 @@ void gen_struct_def(TypeDef* t) {
     printf("typedef struct %s {\n", t->name);
     printf("    int _rc;\n");
     printf("    int _weak_rc;\n");
+    printf("    unsigned int scan_tag; // Scanner mark\n");
 
     for (int i = 0; i < t->field_count; i++) {
         if (t->fields[i].is_scannable) {
@@ -276,10 +316,21 @@ void gen_weak_ref_runtime(void) {
     printf("    int alive;\n");
     printf("} WeakRef;\n\n");
 
+    printf("typedef struct WeakRefNode {\n");
+    printf("    WeakRef* ref;\n");
+    printf("    struct WeakRefNode* next;\n");
+    printf("} WeakRefNode;\n\n");
+
+    printf("WeakRefNode* WEAK_REF_HEAD = NULL;\n\n");
+
     printf("WeakRef* mk_weak_ref(void* target) {\n");
     printf("    WeakRef* w = malloc(sizeof(WeakRef));\n");
     printf("    w->target = target;\n");
     printf("    w->alive = 1;\n");
+    printf("    WeakRefNode* node = malloc(sizeof(WeakRefNode));\n");
+    printf("    node->ref = w;\n");
+    printf("    node->next = WEAK_REF_HEAD;\n");
+    printf("    WEAK_REF_HEAD = node;\n");
     printf("    return w;\n");
     printf("}\n\n");
 
@@ -291,6 +342,17 @@ void gen_weak_ref_runtime(void) {
     printf("void invalidate_weak(WeakRef* w) {\n");
     printf("    if (w) w->alive = 0;\n");
     printf("}\n\n");
+
+    printf("void invalidate_weak_refs_for(void* target) {\n");
+    printf("    WeakRefNode* n = WEAK_REF_HEAD;\n");
+    printf("    while (n) {\n");
+    printf("        WeakRef* obj = n->ref;\n");
+    printf("        if (obj->target == target) {\n");
+    printf("            invalidate_weak(obj);\n");
+    printf("        }\n");
+    printf("        n = n->next;\n");
+    printf("    }\n");
+    printf("}\n\n");
 }
 
 // -- Perceus Runtime --
@@ -300,6 +362,13 @@ void gen_perceus_runtime(void) {
 
     printf("Obj* try_reuse(Obj* old, size_t size) {\n");
     printf("    if (old && old->mark == 1) {\n");
+    printf("        // Reusing: release children if this was a pair\n");
+    printf("        if (old->is_pair) {\n");
+    printf("            if (old->a) dec_ref(old->a);\n");
+    printf("            if (old->b) dec_ref(old->b);\n");
+    printf("            old->a = NULL;\n");
+    printf("            old->b = NULL;\n");
+    printf("        }\n");
     printf("        return old;\n");
     printf("    }\n");
     printf("    if (old) dec_ref(old);\n");
@@ -311,6 +380,7 @@ void gen_perceus_runtime(void) {
     printf("    obj->mark = 1;\n");
     printf("    obj->scc_id = -1;\n");
     printf("    obj->is_pair = 0;\n");
+    printf("    obj->scan_tag = 0;\n");
     printf("    obj->i = value;\n");
     printf("    return obj;\n");
     printf("}\n\n");
@@ -320,6 +390,7 @@ void gen_perceus_runtime(void) {
     printf("    obj->mark = 1;\n");
     printf("    obj->scc_id = -1;\n");
     printf("    obj->is_pair = 1;\n");
+    printf("    obj->scan_tag = 0;\n");
     printf("    obj->a = a;\n");
     printf("    obj->b = b;\n");
     printf("    return obj;\n");
@@ -375,12 +446,15 @@ void gen_runtime_header(void) {
     printf("// Primary Strategy: ASAP + ISMM 2024 (Deeply Immutable Cycles)\n\n");
 
     printf("#include <stdlib.h>\n");
-    printf("#include <stdio.h>\n\n");
+    printf("#include <stdio.h>\n");
+    printf("#include <limits.h>\n\n");
+    printf("void invalidate_weak_refs_for(void* target);\n\n");
 
     printf("typedef struct Obj {\n");
     printf("    int mark;      // Reference count or mark bit\n");
     printf("    int scc_id;    // SCC identifier (-1 if not in SCC)\n");
     printf("    int is_pair;   // 1 if pair, 0 if int\n");
+    printf("    unsigned int scan_tag; // Scanner mark (separate from RC)\n");
     printf("    union {\n");
     printf("        long i;\n");
     printf("        struct { struct Obj *a, *b; };\n");
@@ -402,14 +476,14 @@ void gen_runtime_header(void) {
     // Constructors
     printf("Obj* mk_int(long i) {\n");
     printf("    Obj* x = malloc(sizeof(Obj));\n");
-    printf("    x->mark = 1; x->scc_id = -1; x->is_pair = 0;\n");
+    printf("    x->mark = 1; x->scc_id = -1; x->is_pair = 0; x->scan_tag = 0;\n");
     printf("    x->i = i;\n");
     printf("    return x;\n");
     printf("}\n\n");
 
     printf("Obj* mk_pair(Obj* a, Obj* b) {\n");
     printf("    Obj* x = malloc(sizeof(Obj));\n");
-    printf("    x->mark = 1; x->scc_id = -1; x->is_pair = 1;\n");
+    printf("    x->mark = 1; x->scc_id = -1; x->is_pair = 1; x->scan_tag = 0;\n");
     printf("    x->a = a; x->b = b;\n");
     printf("    return x;\n");
     printf("}\n\n");
@@ -421,9 +495,10 @@ void gen_runtime_header(void) {
     printf("    if (!x) return;\n");
     printf("    if (x >= STACK_POOL && x < STACK_POOL + STACK_POOL_SIZE) return;\n");
     printf("    if (x->is_pair) {\n");
-    printf("        free_tree(x->a);\n");
-    printf("        free_tree(x->b);\n");
+        printf("        free_tree(x->a);\n");
+        printf("        free_tree(x->b);\n");
     printf("    }\n");
+    printf("    invalidate_weak_refs_for(x);\n");
     printf("    free(x);\n");
     printf("}\n\n");
 
@@ -431,20 +506,31 @@ void gen_runtime_header(void) {
     printf("void dec_ref(Obj* x) {\n");
     printf("    if (!x) return;\n");
     printf("    if (x >= STACK_POOL && x < STACK_POOL + STACK_POOL_SIZE) return;\n");
+    printf("    if (x->mark < 0) return;\n");
     printf("    x->mark--;\n");
     printf("    if (x->mark <= 0) {\n");
     printf("        if (x->is_pair) {\n");
     printf("            dec_ref(x->a);\n");
     printf("            dec_ref(x->b);\n");
     printf("        }\n");
+    printf("        invalidate_weak_refs_for(x);\n");
     printf("        free(x);\n");
     printf("    }\n");
+    printf("}\n\n");
+
+    printf("void inc_ref(Obj* x) {\n");
+    printf("    if (!x) return;\n");
+    printf("    if (x >= STACK_POOL && x < STACK_POOL + STACK_POOL_SIZE) return;\n");
+    printf("    if (x->mark < 0) { x->mark = 1; return; }\n");
+    printf("    x->mark++;\n");
     printf("}\n\n");
 
     // Free list operations
     printf("void free_obj(Obj* x) {\n");
     printf("    if (!x) return;\n");
     printf("    if (x >= STACK_POOL && x < STACK_POOL + STACK_POOL_SIZE) return;\n");
+    printf("    if (x->mark < 0) return;\n");
+    printf("    x->mark = -1;\n");
     printf("    FreeNode* n = malloc(sizeof(FreeNode));\n");
     printf("    n->obj = x; n->next = FREE_HEAD; FREE_HEAD = n;\n");
     printf("    FREE_COUNT++;\n");
@@ -454,7 +540,11 @@ void gen_runtime_header(void) {
     printf("    while (FREE_HEAD) {\n");
     printf("        FreeNode* n = FREE_HEAD;\n");
     printf("        FREE_HEAD = n->next;\n");
-    printf("        free(n->obj); free(n);\n");
+    printf("        if (n->obj->mark < 0) {\n");
+    printf("            invalidate_weak_refs_for(n->obj);\n");
+    printf("            free(n->obj);\n");
+    printf("        }\n");
+    printf("        free(n);\n");
     printf("    }\n");
     printf("    FREE_COUNT = 0;\n");
     printf("}\n\n");
@@ -463,7 +553,7 @@ void gen_runtime_header(void) {
     printf("Obj* mk_int_stack(long i) {\n");
     printf("    if (STACK_PTR < STACK_POOL_SIZE) {\n");
     printf("        Obj* x = &STACK_POOL[STACK_PTR++];\n");
-    printf("        x->mark = 0; x->scc_id = -1; x->is_pair = 0;\n");
+    printf("        x->mark = 0; x->scc_id = -1; x->is_pair = 0; x->scan_tag = 0;\n");
     printf("        x->i = i;\n");
     printf("        return x;\n");
     printf("    }\n");

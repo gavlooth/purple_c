@@ -31,6 +31,10 @@
 // -- Main Entry Point --
 
 int main(int argc, char** argv) {
+    // Initialize compiler arena (Phase 12)
+    // All Value* allocations during compilation use this arena
+    compiler_arena_init();
+
     // Initialize symbol table
     init_syms();
 
@@ -106,21 +110,21 @@ int main(int argc, char** argv) {
     gen_asap_scanner("List", 1);
 
     printf("\n// Runtime arithmetic functions\n");
-    printf("Obj* add(Obj* a, Obj* b) { return mk_int(a->i + b->i); }\n");
-    printf("Obj* sub(Obj* a, Obj* b) { return mk_int(a->i - b->i); }\n");
-    printf("Obj* mul(Obj* a, Obj* b) { return mk_int(a->i * b->i); }\n");
-    printf("Obj* div_op(Obj* a, Obj* b) { return mk_int(b->i ? a->i / b->i : 0); }\n");
-    printf("Obj* mod_op(Obj* a, Obj* b) { return mk_int(b->i ? a->i %% b->i : 0); }\n\n");
+    printf("Obj* add(Obj* a, Obj* b) { if (!a || !b) return mk_int(0); return mk_int(a->i + b->i); }\n");
+    printf("Obj* sub(Obj* a, Obj* b) { if (!a || !b) return mk_int(0); return mk_int(a->i - b->i); }\n");
+    printf("Obj* mul(Obj* a, Obj* b) { if (!a || !b) return mk_int(0); return mk_int(a->i * b->i); }\n");
+    printf("Obj* div_op(Obj* a, Obj* b) { if (!a || !b || b->i == 0) return mk_int(0); return mk_int(a->i / b->i); }\n");
+    printf("Obj* mod_op(Obj* a, Obj* b) { if (!a || !b || b->i == 0 || (a->i == LONG_MIN && b->i == -1)) return mk_int(0); return mk_int(a->i %% b->i); }\n\n");
 
     printf("// Runtime comparison functions\n");
-    printf("Obj* eq_op(Obj* a, Obj* b) { return mk_int(a->i == b->i); }\n");
-    printf("Obj* lt_op(Obj* a, Obj* b) { return mk_int(a->i < b->i); }\n");
-    printf("Obj* gt_op(Obj* a, Obj* b) { return mk_int(a->i > b->i); }\n");
-    printf("Obj* le_op(Obj* a, Obj* b) { return mk_int(a->i <= b->i); }\n");
-    printf("Obj* ge_op(Obj* a, Obj* b) { return mk_int(a->i >= b->i); }\n\n");
+    printf("Obj* eq_op(Obj* a, Obj* b) { if (!a || !b) return mk_int(0); return mk_int(a->i == b->i); }\n");
+    printf("Obj* lt_op(Obj* a, Obj* b) { if (!a || !b) return mk_int(0); return mk_int(a->i < b->i); }\n");
+    printf("Obj* gt_op(Obj* a, Obj* b) { if (!a || !b) return mk_int(0); return mk_int(a->i > b->i); }\n");
+    printf("Obj* le_op(Obj* a, Obj* b) { if (!a || !b) return mk_int(0); return mk_int(a->i <= b->i); }\n");
+    printf("Obj* ge_op(Obj* a, Obj* b) { if (!a || !b) return mk_int(0); return mk_int(a->i >= b->i); }\n\n");
 
     printf("// Runtime logical functions\n");
-    printf("Obj* not_op(Obj* a, Obj* unused) { (void)unused; return mk_int(!a->i); }\n\n");
+    printf("Obj* not_op(Obj* a, Obj* unused) { (void)unused; if (!a) return mk_int(1); return mk_int(!a->i); }\n\n");
 
     printf("// Runtime list functions\n");
     printf("int is_nil(Obj* x) { return x == NULL; }\n\n");
@@ -128,33 +132,42 @@ int main(int argc, char** argv) {
     printf("int main() {\n");
 
     // Process input expressions
-    char input_buf[4096] = {0};
-    const char* input = NULL;
+    char* input_str = NULL;
+    int input_allocated = 0;
 
     if (argc > 1) {
         // Read from command line argument
-        input = argv[1];
+        input_str = argv[1];
     } else {
-        // Read from stdin
-        if (fgets(input_buf, sizeof(input_buf), stdin)) {
-            // Remove trailing newline
-            size_t len = strlen(input_buf);
-            if (len > 0 && input_buf[len-1] == '\n') {
-                input_buf[len-1] = '\0';
+        // Read from stdin using dynamic buffer
+        size_t cap = 1024;
+        size_t len = 0;
+        char* buf = malloc(cap);
+        if (!buf) { fprintf(stderr, "OOM\n"); return 1; }
+        
+        int c;
+        while ((c = getchar()) != EOF && c != '\n') {
+            if (len + 1 >= cap) {
+                cap *= 2;
+                buf = realloc(buf, cap);
+                if (!buf) { fprintf(stderr, "OOM\n"); return 1; }
             }
-            input = input_buf;
+            buf[len++] = (char)c;
         }
+        buf[len] = '\0';
+        input_str = buf;
+        input_allocated = 1;
     }
 
-    if (input && strlen(input) > 0) {
-        set_parse_input(input);
+    if (input_str && strlen(input_str) > 0) {
+        set_parse_input(input_str);
         Value* expr = parse();
         if (expr) {
             Value* result = eval(expr, menv);
             char* str = val_to_str(result);
             if (result->tag == T_CODE) {
                 // Compiled code - output as expression
-                printf("  // Expression: %s\n", input);
+                printf("  // Expression: %s\n", input_str);
                 printf("  Obj* result = %s;\n", str);
                 printf("  printf(\"Result: %%ld\\n\", result->i);\n");
             } else if (result->tag == T_INT) {
@@ -180,11 +193,16 @@ int main(int argc, char** argv) {
             free(str);
         }
     }
+    
+    if (input_allocated) free(input_str);
 
     printf("  flush_freelist();\n");
     printf("  flush_all_deferred();\n");
     printf("  return 0;\n");
     printf("}\n");
+
+    // Cleanup compiler arena - bulk free all Values and strings
+    compiler_arena_cleanup();
 
     return 0;
 }
