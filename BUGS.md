@@ -14,6 +14,7 @@ This document tracks low-level bugs identified through static analysis.
 | NULL dereference | 4 | HIGH | FIXED |
 | Missing cleanup | 2 | MEDIUM | FIXED |
 | Generated code | 2 | MEDIUM | FIXED |
+| Arithmetic overflow UB | 3 | HIGH | FIXED |
 
 ---
 
@@ -210,6 +211,32 @@ printf("Obj* mod_op(Obj* a, Obj* b) { return mk_int(b->i ? a->i %% b->i : 0); }\
 
 ### Fix
 Add NULL checks and edge case handling in generated code.
+
+---
+
+## HIGH: Arithmetic Overflow in Generated Runtime (FIXED)
+
+### Issue
+Generated runtime arithmetic functions (`add`, `sub`, `mul`) performed operations
+without checking for signed integer overflow, which is undefined behavior in C.
+
+```c
+// Old code - UB on overflow
+Obj* add(Obj* a, Obj* b) { ... return mk_int(a->i + b->i); }
+Obj* sub(Obj* a, Obj* b) { ... return mk_int(a->i - b->i); }
+Obj* mul(Obj* a, Obj* b) { ... return mk_int(a->i * b->i); }
+```
+
+### Location
+`src/main.c:145-147` (generated runtime functions)
+
+### Fix
+Added overflow checks before performing arithmetic:
+- `add`: Check if `a + b` would overflow/underflow
+- `sub`: Check if `a - b` would overflow/underflow
+- `mul`: Check if `a * b` would overflow in any quadrant
+
+Returns 0 on overflow (consistent with div/mod behavior on error).
 
 ---
 

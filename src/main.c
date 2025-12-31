@@ -141,10 +141,25 @@ int main(int argc, char** argv) {
     // Generate ASAP scanner for List type
     gen_asap_scanner("List", 1);
 
-    printf("\n// Runtime arithmetic functions\n");
-    printf("Obj* add(Obj* a, Obj* b) { if (!a || !b) return mk_int(0); return mk_int(a->i + b->i); }\n");
-    printf("Obj* sub(Obj* a, Obj* b) { if (!a || !b) return mk_int(0); return mk_int(a->i - b->i); }\n");
-    printf("Obj* mul(Obj* a, Obj* b) { if (!a || !b) return mk_int(0); return mk_int(a->i * b->i); }\n");
+    printf("\n// Runtime arithmetic functions (with overflow protection)\n");
+    printf("Obj* add(Obj* a, Obj* b) {\n");
+    printf("    if (!a || !b) return mk_int(0);\n");
+    printf("    if ((b->i > 0 && a->i > LONG_MAX - b->i) || (b->i < 0 && a->i < LONG_MIN - b->i)) return mk_int(0);\n");
+    printf("    return mk_int(a->i + b->i);\n");
+    printf("}\n");
+    printf("Obj* sub(Obj* a, Obj* b) {\n");
+    printf("    if (!a || !b) return mk_int(0);\n");
+    printf("    if ((b->i < 0 && a->i > LONG_MAX + b->i) || (b->i > 0 && a->i < LONG_MIN + b->i)) return mk_int(0);\n");
+    printf("    return mk_int(a->i - b->i);\n");
+    printf("}\n");
+    printf("Obj* mul(Obj* a, Obj* b) {\n");
+    printf("    if (!a || !b) return mk_int(0);\n");
+    printf("    if (a->i > 0 && b->i > 0 && a->i > LONG_MAX / b->i) return mk_int(0);\n");
+    printf("    if (a->i > 0 && b->i < 0 && b->i < LONG_MIN / a->i) return mk_int(0);\n");
+    printf("    if (a->i < 0 && b->i > 0 && a->i < LONG_MIN / b->i) return mk_int(0);\n");
+    printf("    if (a->i < 0 && b->i < 0 && a->i < LONG_MAX / b->i) return mk_int(0);\n");
+    printf("    return mk_int(a->i * b->i);\n");
+    printf("}\n");
     printf("Obj* div_op(Obj* a, Obj* b) { if (!a || !b || b->i == 0 || (a->i == LONG_MIN && b->i == -1)) return mk_int(0); return mk_int(a->i / b->i); }\n");
     printf("Obj* mod_op(Obj* a, Obj* b) { if (!a || !b || b->i == 0 || (a->i == LONG_MIN && b->i == -1)) return mk_int(0); return mk_int(a->i %% b->i); }\n\n");
 

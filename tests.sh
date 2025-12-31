@@ -498,6 +498,21 @@ run_test "Prim-OrShort" \
     "(or t nil)" \
     "Result: t"
 
+# 84. Overflow protection in generated add function
+run_test "Prim-AddOverflowProtect" \
+    "(lift 0)" \
+    "if ((b->i > 0 && a->i > LONG_MAX - b->i)"
+
+# 85. Overflow protection in generated sub function
+run_test "Prim-SubOverflowProtect" \
+    "(lift 0)" \
+    "if ((b->i < 0 && a->i > LONG_MAX + b->i)"
+
+# 86. Overflow protection in generated mul function
+run_test "Prim-MulOverflowProtect" \
+    "(lift 0)" \
+    "if (a->i > 0 && b->i > 0 && a->i > LONG_MAX / b->i)"
+
 if [ $FAIL -eq 0 ]; then
     echo "All tests passed!"
     exit 0
