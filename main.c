@@ -748,7 +748,15 @@ void compute_liveness(CFG* cfg) {
                 }
             }
 
-            // Update
+            // Update - free old arrays first
+            for (int j = 0; j < node->live_in_count; j++) {
+                free(node->live_in[j]);
+            }
+            free(node->live_in);
+            for (int j = 0; j < node->live_out_count; j++) {
+                free(node->live_out[j]);
+            }
+            free(node->live_out);
             node->live_in = new_live_in;
             node->live_in_count = new_in_count;
             node->live_out = new_live_out;
