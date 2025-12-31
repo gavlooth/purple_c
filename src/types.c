@@ -123,13 +123,13 @@ Value* mk_sym(const char* s) {
     if (!s) s = "";
     Value* v = alloc_val(T_SYM);
     if (!v) return NULL;
-    v->s = s ? strdup(s) : NULL;
-    if (s && !v->s) {
+    v->s = strdup(s);
+    if (!v->s) {
         // Don't free v if using arena (arena will bulk free)
         if (!compiler_arena_current) free(v);
         return NULL;
     }
-    if (v->s && compiler_arena_current) {
+    if (compiler_arena_current) {
         compiler_arena_register_string(v->s);
     }
     return v;
@@ -154,13 +154,13 @@ Value* mk_code(const char* s) {
     if (!s) s = "";
     Value* v = alloc_val(T_CODE);
     if (!v) return NULL;
-    v->s = s ? strdup(s) : NULL;
-    if (s && !v->s) {
+    v->s = strdup(s);
+    if (!v->s) {
         // Don't free v if using arena (arena will bulk free)
         if (!compiler_arena_current) free(v);
         return NULL;
     }
-    if (v->s && compiler_arena_current) {
+    if (compiler_arena_current) {
         compiler_arena_register_string(v->s);
     }
     return v;
