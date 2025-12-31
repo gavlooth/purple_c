@@ -211,7 +211,7 @@ int main(int argc, char** argv) {
                 printf("  // Expression: %s\n", escaped ? escaped : input_str);
                 free(escaped);
                 printf("  Obj* result = %s;\n", str);
-                printf("  printf(\"Result: %%ld\\n\", result->i);\n");
+                printf("  if (result) printf(\"Result: %%ld\\n\", result->i);\n");
             } else if (result && result->tag == T_INT) {
                 // Interpreted result - output as comment
                 printf("  // Result: %ld\n", result->i);
@@ -234,7 +234,7 @@ int main(int argc, char** argv) {
             char* str = val_to_str(result);
             if (!str) str = strdup("(error)");
             printf("  Obj* result = %s;\n", str);
-            printf("  printf(\"Result: %%ld\\n\", result->i);\n");
+            printf("  if (result) printf(\"Result: %%ld\\n\", result->i);\n");
             free(str);
         }
     }
