@@ -52,8 +52,9 @@ Items below are grouped by status.
 40) **[Parser]** Mismatched parentheses handling
     - Unexpected `)` causes early return of `NIL` or consumes loop without error, potentially masking syntax errors.
 
-42) **[Main]** Unescaped input in comments
+42) **[Main]** Unescaped input in comments — **RESOLVED**
     - `printf("// Expression: %s", input_str)` breaks if input contains newlines.
+    - Fix: Added `escape_for_comment()` helper that escapes newlines/tabs/control chars before printing
 
 43) **[DPS]** Memory safety in `analyze_dps`
     - Unchecked `malloc` in `analyze_dps`.
@@ -221,3 +222,6 @@ Items below are grouped by status.
 
 51) **[Main]** Integer overflow in stdin buffer resizing
     - Fix: Added overflow check before doubling capacity
+
+52) **[Main]** Unescaped input in comments
+    - Fix: Added `escape_for_comment()` helper that escapes newlines/tabs/control chars before printing in C comments

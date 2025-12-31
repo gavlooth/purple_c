@@ -29,6 +29,37 @@
 #include "analysis/escape.h"
 #include "analysis/dps.h"
 
+// Escape a string for safe use in C single-line comments.
+// Returns malloc'd string that caller must free.
+// Replaces newlines with \n, tabs with \t, and other control chars with ?.
+static char* escape_for_comment(const char* s) {
+    if (!s) return NULL;
+    size_t len = strlen(s);
+    // Worst case: every char needs escaping (2 chars each)
+    char* out = malloc(len * 2 + 1);
+    if (!out) return NULL;
+    size_t j = 0;
+    for (size_t i = 0; i < len; i++) {
+        unsigned char c = (unsigned char)s[i];
+        if (c == '\n') {
+            out[j++] = '\\';
+            out[j++] = 'n';
+        } else if (c == '\r') {
+            out[j++] = '\\';
+            out[j++] = 'r';
+        } else if (c == '\t') {
+            out[j++] = '\\';
+            out[j++] = 't';
+        } else if (c < 32 || c == 127) {
+            out[j++] = '?';
+        } else {
+            out[j++] = (char)c;
+        }
+    }
+    out[j] = '\0';
+    return out;
+}
+
 // -- Main Entry Point --
 
 int main(int argc, char** argv) {
@@ -175,7 +206,9 @@ int main(int argc, char** argv) {
             char* str = val_to_str(result);
             if (result->tag == T_CODE) {
                 // Compiled code - output as expression
-                printf("  // Expression: %s\n", input_str);
+                char* escaped = escape_for_comment(input_str);
+                printf("  // Expression: %s\n", escaped ? escaped : input_str);
+                free(escaped);
                 printf("  Obj* result = %s;\n", str);
                 printf("  printf(\"Result: %%ld\\n\", result->i);\n");
             } else if (result->tag == T_INT) {
@@ -183,7 +216,9 @@ int main(int argc, char** argv) {
                 printf("  // Result: %ld\n", result->i);
             } else {
                 // Other result types
-                printf("  // Result: %s\n", str);
+                char* escaped_str = escape_for_comment(str);
+                printf("  // Result: %s\n", escaped_str ? escaped_str : str);
+                free(escaped_str);
             }
             free(str);
         }
