@@ -154,9 +154,12 @@ void gen_exception_runtime(void) {
     printf("    if (!EXC_STACK || !ptr) return;\n");
     printf("    ExcFrame* frame = EXC_STACK;\n");
     printf("    if (frame->cleanup_count >= frame->cleanup_capacity) {\n");
-    printf("        frame->cleanup_capacity *= 2;\n");
-    printf("        frame->cleanup_vars = realloc(frame->cleanup_vars,\n");
-    printf("            frame->cleanup_capacity * sizeof(void*));\n");
+    printf("        int new_cap = frame->cleanup_capacity * 2;\n");
+    printf("        void** tmp = realloc(frame->cleanup_vars,\n");
+    printf("            new_cap * sizeof(void*));\n");
+    printf("        if (!tmp) return;  // Cannot register, but don't crash\n");
+    printf("        frame->cleanup_vars = tmp;\n");
+    printf("        frame->cleanup_capacity = new_cap;\n");
     printf("    }\n");
     printf("    frame->cleanup_vars[frame->cleanup_count++] = ptr;\n");
     printf("}\n\n");
