@@ -243,7 +243,10 @@ void gen_concurrent_runtime(void) {
     printf("    sa->arg = arg;\n");
     printf("    sa->thread_id = next_thread_id++;\n");
     printf("    pthread_t tid;\n");
-    printf("    pthread_create(&tid, NULL, thread_wrapper, sa);\n");
+    printf("    if (pthread_create(&tid, NULL, thread_wrapper, sa) != 0) {\n");
+    printf("        free(sa);\n");
+    printf("        return (pthread_t)0;\n");
+    printf("    }\n");
     printf("    return tid;\n");
     printf("}\n\n");
 
