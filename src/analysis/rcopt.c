@@ -90,6 +90,10 @@ RCOptInfo* rcopt_define_var(RCOptContext* ctx, const char* name) {
     if (!info) return NULL;
 
     info->var_name = strdup(name);
+    if (!info->var_name) {
+        free(info);
+        return NULL;
+    }
     info->is_unique = 1;  /* Fresh allocations are unique */
     info->is_borrowed = 0;
     info->defined_at = next_point(ctx);
@@ -122,11 +126,20 @@ RCOptInfo* rcopt_define_alias(RCOptContext* ctx, const char* name, const char* a
     if (!info) return NULL;
 
     info->var_name = strdup(name);
+    if (!info->var_name) {
+        free(info);
+        return NULL;
+    }
     info->is_unique = 0;
     info->is_borrowed = 0;
     info->defined_at = next_point(ctx);
     info->last_used_at = 0;
     info->alias_of = strdup(alias_of);
+    if (!info->alias_of) {
+        free(info->var_name);
+        free(info);
+        return NULL;
+    }
     info->aliases = NULL;
     info->alias_count = 0;
     info->alias_capacity = 0;
@@ -149,6 +162,10 @@ RCOptInfo* rcopt_define_borrowed(RCOptContext* ctx, const char* name) {
     if (!info) return NULL;
 
     info->var_name = strdup(name);
+    if (!info->var_name) {
+        free(info);
+        return NULL;
+    }
     info->is_unique = 0;
     info->is_borrowed = 1;
     info->defined_at = next_point(ctx);
