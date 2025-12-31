@@ -965,6 +965,7 @@ char* list_to_str(Value* v) {
 }
 
 char* val_to_str(Value* v) {
+    if (!v) return strdup("()");  // NULL treated as NIL
     char buf[4096];
     switch (v->tag) {
         case T_INT: sprintf(buf, "%ld", v->i); return strdup(buf);
