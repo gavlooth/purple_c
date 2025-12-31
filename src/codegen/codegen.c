@@ -405,13 +405,27 @@ void gen_weak_ref_runtime(void) {
     printf("}\n\n");
 
     printf("void invalidate_weak_refs_for(void* target) {\n");
-    printf("    WeakRefNode* n = WEAK_REF_HEAD;\n");
-    printf("    while (n) {\n");
+    printf("    WeakRefNode** prev = &WEAK_REF_HEAD;\n");
+    printf("    while (*prev) {\n");
+    printf("        WeakRefNode* n = *prev;\n");
     printf("        WeakRef* obj = n->ref;\n");
     printf("        if (obj->target == target) {\n");
-    printf("            invalidate_weak(obj);\n");
+    printf("            *prev = n->next;\n");
+    printf("            free(obj);\n");
+    printf("            free(n);\n");
+    printf("        } else {\n");
+    printf("            prev = &n->next;\n");
     printf("        }\n");
-    printf("        n = n->next;\n");
+    printf("    }\n");
+    printf("}\n\n");
+
+    // Add cleanup function for program end
+    printf("void cleanup_all_weak_refs(void) {\n");
+    printf("    while (WEAK_REF_HEAD) {\n");
+    printf("        WeakRefNode* n = WEAK_REF_HEAD;\n");
+    printf("        WEAK_REF_HEAD = n->next;\n");
+    printf("        free(n->ref);\n");
+    printf("        free(n);\n");
     printf("    }\n");
     printf("}\n\n");
 }
