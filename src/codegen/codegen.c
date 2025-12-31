@@ -581,6 +581,7 @@ void gen_runtime_header(void) {
     printf("    if (x->mark < 0) return;\n");
     printf("    x->mark = -1;\n");
     printf("    FreeNode* n = malloc(sizeof(FreeNode));\n");
+    printf("    if (!n) { invalidate_weak_refs_for(x); free(x); return; }\n");
     printf("    n->obj = x; n->next = FREE_HEAD; FREE_HEAD = n;\n");
     printf("    FREE_COUNT++;\n");
     printf("}\n\n");
