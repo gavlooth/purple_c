@@ -19,7 +19,7 @@ void* arena_alloc(Arena* a, size_t size) {
     if (!a) return NULL;
 
     // Align to 8 bytes
-    size = (size + 7) & ~7;
+    size = (size + 7) & ~(size_t)7;
 
     if (!a->current || a->current->used + size > a->current->size) {
         // Need new block
@@ -175,7 +175,7 @@ void gen_arena_runtime(void) {
 
     printf("void* arena_alloc(Arena* a, size_t size) {\n");
     printf("    if (!a) return NULL;\n");
-    printf("    size = (size + 7) & ~7;\n");
+    printf("    size = (size + 7) & ~(size_t)7;\n");
     printf("    if (!a->current || a->current->used + size > a->current->size) {\n");
     printf("        size_t bs = a->block_size;\n");
     printf("        if (size > bs) bs = size;\n");

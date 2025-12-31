@@ -37,7 +37,7 @@ void compiler_arena_init(void) {
 
 static void* compiler_arena_alloc(size_t size) {
     // Align to 8 bytes
-    size = (size + 7) & ~7;
+    size = (size + 7) & ~(size_t)7;
 
     if (!compiler_arena_current || compiler_arena_current->used + size > compiler_arena_current->size) {
         // Need new block
