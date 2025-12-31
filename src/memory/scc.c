@@ -286,6 +286,15 @@ void tarjan_dfs(SCCRegistry* reg, Obj* v, SCC** result) {
             // If v is root of SCC
             if (node->lowlink == node->id) {
                 SCC* scc = create_scc(reg);
+                if (!scc) {
+                    // Allocation failed - drain stack to avoid leaking state
+                    SCCNode* w;
+                    do {
+                        w = pop_stack(reg);
+                    } while (w && w != node);
+                    free(pop_tarjan_frame(&work_stack));
+                    break;
+                }
                 SCCNode* w;
                 do {
                     w = pop_stack(reg);
