@@ -939,6 +939,7 @@ Value* mk_int(long i) {
 }
 
 Value* mk_sym(const char* s) {
+    if (!s) s = "";
     Value* v = alloc_val(T_SYM);
     if (!v) return NULL;
     v->s = strdup(s);
@@ -947,6 +948,7 @@ Value* mk_sym(const char* s) {
 }
 
 Value* mk_code(const char* s) {
+    if (!s) s = "";
     Value* v = alloc_val(T_CODE);
     if (!v) return NULL;
     v->s = strdup(s);
