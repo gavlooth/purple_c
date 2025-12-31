@@ -1,5 +1,6 @@
 #include "scc.h"
 #include <stdio.h>
+#include <limits.h>
 
 // -- SCC Registry Management --
 
@@ -74,6 +75,7 @@ SCC* create_scc(SCCRegistry* reg) {
 void add_to_scc(SCC* scc, Obj* obj) {
     if (!scc || !obj) return;
     if (scc->member_count >= scc->capacity) {
+        if (scc->capacity > INT_MAX / 2) return;  // Overflow protection
         int new_cap = scc->capacity * 2;
         Obj** new_members = realloc(scc->members, new_cap * sizeof(Obj*));
         if (!new_members) return;  // Keep existing data on failure
