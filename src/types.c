@@ -208,11 +208,14 @@ int sym_eq_str(Value* s1, const char* s2) {
 
 char* list_to_str(Value* v) {
     DString* ds = ds_new();
+    if (!ds) return NULL;
     ds_append_char(ds, '(');
     while (v && !is_nil(v)) {
         char* s = val_to_str(car(v));
-        ds_append(ds, s);
-        free(s);
+        if (s) {
+            ds_append(ds, s);
+            free(s);
+        }
         v = cdr(v);
         if (v && !is_nil(v)) ds_append_char(ds, ' ');
     }
@@ -226,12 +229,13 @@ char* val_to_str(Value* v) {
     switch (v->tag) {
         case T_INT:
             ds = ds_new();
+            if (!ds) return NULL;
             ds_append_int(ds, v->i);
             return ds_take(ds);
         case T_SYM:
-            return strdup(v->s);
+            return v->s ? strdup(v->s) : NULL;
         case T_CODE:
-            return strdup(v->s);
+            return v->s ? strdup(v->s) : NULL;
         case T_CELL:
             return list_to_str(v);
         case T_NIL:
