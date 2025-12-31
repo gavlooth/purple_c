@@ -4,6 +4,8 @@
 #include <ctype.h>
 #include <string.h>
 #include <stdlib.h>
+#include <errno.h>
+#include <limits.h>
 
 extern Value* NIL;
 extern Value* SYM_QUOTE;
@@ -144,8 +146,18 @@ Value* parse(void) {
             else {
                 // Atom (int or sym)
                 if (isdigit((unsigned char)*parse_ptr) || (*parse_ptr == '-' && isdigit((unsigned char)parse_ptr[1]))) {
-                    long i = strtol(parse_ptr, (char**)&parse_ptr, 10);
-                    current_result = mk_int(i);
+                    errno = 0;
+                    char* endptr;
+                    long i = strtol(parse_ptr, &endptr, 10);
+                    if (errno == ERANGE || (errno != 0 && i == 0)) {
+                        fprintf(stderr, "Parse error: integer overflow\n");
+                        // Consume the invalid token and return NIL
+                        parse_ptr = endptr;
+                        current_result = NIL;
+                    } else {
+                        parse_ptr = endptr;
+                        current_result = mk_int(i);
+                    }
                 } else {
                     const char* start = parse_ptr;
                     while (*parse_ptr && !isspace((unsigned char)*parse_ptr) && *parse_ptr != ')' && *parse_ptr != '(') {

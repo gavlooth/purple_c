@@ -41,6 +41,7 @@ Items below are grouped by status.
 
 37) **[Parser]** `strtol` error checking missing
     - `strtol` in `parser.c` doesn't check `errno` for overflow.
+    - Fix: Added errno check and error handling for ERANGE
 
 38) **[Codegen]** Unescaped string literals
     - `val_to_c_expr` in `codegen.c` dumps string content directly. Input `(print "\"; system(\"rm -rf /\"); //")` executes arbitrary C.
