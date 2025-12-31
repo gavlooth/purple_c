@@ -156,8 +156,12 @@ static void reset_tarjan_state(SCCRegistry* reg) {
 
     if (reg->node_lookup) {
         hashmap_free(reg->node_lookup);
+        reg->node_lookup = NULL;
     }
-    reg->node_lookup = hashmap_new();
+    HashMap* new_map = hashmap_new();
+    if (new_map) {
+        reg->node_lookup = new_map;
+    }
 }
 
 // -- Tarjan's SCC Algorithm (Iterative with explicit stack) --
