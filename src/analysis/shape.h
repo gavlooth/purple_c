@@ -34,6 +34,7 @@ const char* shape_to_string(Shape s);
 
 // Context management
 ShapeContext* mk_shape_context(void);
+void free_shape_context(ShapeContext* ctx);
 ShapeInfo* find_shape(ShapeContext* ctx, const char* name);
 void add_shape(ShapeContext* ctx, const char* name, Shape shape);
 Shape lookup_shape(ShapeContext* ctx, Value* expr);

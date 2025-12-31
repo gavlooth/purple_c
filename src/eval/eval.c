@@ -298,6 +298,8 @@ Value* h_let_default(Value* exp, Value* menv) {
         if (b) {
             ds_free(all_decls);
             ds_free(all_frees);
+            free_analysis_ctx(ctx);
+            free_shape_context(shape_ctx);
             while (bind_list) {
                 BindingInfo* next = bind_list->next;
                 free(bind_list);
@@ -321,6 +323,8 @@ Value* h_let_default(Value* exp, Value* menv) {
 
         ds_free(all_decls);
         ds_free(all_frees);
+        free_analysis_ctx(ctx);
+        free_shape_context(shape_ctx);
 
         while (bind_list) {
             BindingInfo* next = bind_list->next;

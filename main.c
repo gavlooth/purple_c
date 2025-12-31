@@ -160,6 +160,18 @@ ShapeContext* mk_shape_context() {
     return ctx;
 }
 
+void free_shape_context(ShapeContext* ctx) {
+    if (!ctx) return;
+    ShapeInfo* s = ctx->shapes;
+    while (s) {
+        ShapeInfo* next = s->next;
+        free(s->var_name);
+        free(s);
+        s = next;
+    }
+    free(ctx);
+}
+
 ShapeInfo* find_shape(ShapeContext* ctx, const char* name) {
     if (!ctx) return NULL;
     ShapeInfo* s = ctx->shapes;
@@ -1905,6 +1917,7 @@ Value* h_let_default(Value* exp, Value* menv) {
 
         if (res->tag != T_CODE) free(sres);
         free_analysis_ctx(ctx);
+        free_shape_context(shape_ctx);
 
         // Free binding info list
         while (bind_list) {

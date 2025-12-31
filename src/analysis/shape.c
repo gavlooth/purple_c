@@ -28,6 +28,18 @@ ShapeContext* mk_shape_context(void) {
     return ctx;
 }
 
+void free_shape_context(ShapeContext* ctx) {
+    if (!ctx) return;
+    ShapeInfo* s = ctx->shapes;
+    while (s) {
+        ShapeInfo* next = s->next;
+        free(s->var_name);
+        free(s);
+        s = next;
+    }
+    free(ctx);
+}
+
 ShapeInfo* find_shape(ShapeContext* ctx, const char* name) {
     if (!ctx) return NULL;
     ShapeInfo* s = ctx->shapes;
