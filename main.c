@@ -566,7 +566,9 @@ typedef struct CFG {
 } CFG;
 
 CFGNode* mk_cfg_node(CFG* cfg, Value* expr) {
+    if (!cfg) return NULL;
     CFGNode* n = malloc(sizeof(CFGNode));
+    if (!n) return NULL;
     n->id = cfg->node_count;
     n->expr = expr;
     n->succs = malloc(4 * sizeof(CFGNode*));
@@ -580,35 +582,71 @@ CFGNode* mk_cfg_node(CFG* cfg, Value* expr) {
     n->live_in_count = 0;
     n->live_out_count = 0;
 
+    if (!n->succs || !n->preds || !n->live_in || !n->live_out) {
+        free(n->succs);
+        free(n->preds);
+        free(n->live_in);
+        free(n->live_out);
+        free(n);
+        return NULL;
+    }
+
     if (cfg->node_count >= cfg->node_capacity) {
-        cfg->node_capacity *= 2;
-        cfg->nodes = realloc(cfg->nodes, cfg->node_capacity * sizeof(CFGNode*));
+        int new_cap = cfg->node_capacity * 2;
+        CFGNode** tmp = realloc(cfg->nodes, new_cap * sizeof(CFGNode*));
+        if (!tmp) {
+            free(n->succs);
+            free(n->preds);
+            free(n->live_in);
+            free(n->live_out);
+            free(n);
+            return NULL;
+        }
+        cfg->nodes = tmp;
+        cfg->node_capacity = new_cap;
     }
     cfg->nodes[cfg->node_count++] = n;
     return n;
 }
 
 void add_cfg_edge(CFGNode* from, CFGNode* to) {
+    if (!from || !to) return;
     if (from->succ_count >= from->succ_capacity) {
-        from->succ_capacity *= 2;
-        from->succs = realloc(from->succs, from->succ_capacity * sizeof(CFGNode*));
+        int new_cap = from->succ_capacity * 2;
+        CFGNode** tmp = realloc(from->succs, new_cap * sizeof(CFGNode*));
+        if (!tmp) return;
+        from->succs = tmp;
+        from->succ_capacity = new_cap;
     }
     from->succs[from->succ_count++] = to;
 
     if (to->pred_count >= to->pred_capacity) {
-        to->pred_capacity *= 2;
-        to->preds = realloc(to->preds, to->pred_capacity * sizeof(CFGNode*));
+        int new_cap = to->pred_capacity * 2;
+        CFGNode** tmp = realloc(to->preds, new_cap * sizeof(CFGNode*));
+        if (!tmp) return;
+        to->preds = tmp;
+        to->pred_capacity = new_cap;
     }
     to->preds[to->pred_count++] = from;
 }
 
 CFG* mk_cfg() {
     CFG* cfg = malloc(sizeof(CFG));
+    if (!cfg) return NULL;
     cfg->nodes = malloc(64 * sizeof(CFGNode*));
+    if (!cfg->nodes) {
+        free(cfg);
+        return NULL;
+    }
     cfg->node_count = 0;
     cfg->node_capacity = 64;
     cfg->entry = mk_cfg_node(cfg, NULL);
     cfg->exit = mk_cfg_node(cfg, NULL);
+    if (!cfg->entry || !cfg->exit) {
+        free(cfg->nodes);
+        free(cfg);
+        return NULL;
+    }
     return cfg;
 }
 
