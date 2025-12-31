@@ -52,9 +52,6 @@ Items below are grouped by status.
 40) **[Parser]** Mismatched parentheses handling
     - Unexpected `)` causes early return of `NIL` or consumes loop without error, potentially masking syntax errors.
 
-41) **[Main]** Integer overflow in stdin buffer resizing
-    - `cap *= 2` can overflow `size_t`, causing small allocation and subsequent heap overflow.
-
 42) **[Main]** Unescaped input in comments
     - `printf("// Expression: %s", input_str)` breaks if input contains newlines.
 
@@ -221,3 +218,6 @@ Items below are grouped by status.
 
 50) **[SCC Release]** Generated `release_scc` doesn't invalidate weak refs before freeing
     - Fix: Added `invalidate_weak_refs_for` call before freeing SCC members
+
+51) **[Main]** Integer overflow in stdin buffer resizing
+    - Fix: Added overflow check before doubling capacity

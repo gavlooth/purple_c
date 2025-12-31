@@ -14,6 +14,7 @@
 #include <stdio.h>
 #include <ctype.h>
 #include <string.h>
+#include <stdint.h>
 
 #include "types.h"
 #include "eval/eval.h"
@@ -148,9 +149,16 @@ int main(int argc, char** argv) {
         int c;
         while ((c = getchar()) != EOF && c != '\n') {
             if (len + 1 >= cap) {
-                cap *= 2;
-                buf = realloc(buf, cap);
-                if (!buf) { fprintf(stderr, "OOM\n"); return 1; }
+                if (cap > SIZE_MAX / 2) {
+                    fprintf(stderr, "Input too large\n");
+                    free(buf);
+                    return 1;
+                }
+                size_t new_cap = cap * 2;
+                char* new_buf = realloc(buf, new_cap);
+                if (!new_buf) { fprintf(stderr, "OOM\n"); free(buf); return 1; }
+                buf = new_buf;
+                cap = new_cap;
             }
             buf[len++] = (char)c;
         }
