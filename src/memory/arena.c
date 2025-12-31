@@ -176,12 +176,15 @@ void gen_arena_runtime(void) {
     printf("}\n\n");
 
     printf("void* arena_alloc(Arena* a, size_t size) {\n");
+    printf("    if (!a) return NULL;\n");
     printf("    size = (size + 7) & ~7;\n");
     printf("    if (!a->current || a->current->used + size > a->current->size) {\n");
     printf("        size_t bs = a->block_size;\n");
     printf("        if (size > bs) bs = size;\n");
     printf("        ArenaBlock* b = malloc(sizeof(ArenaBlock));\n");
+    printf("        if (!b) return NULL;\n");
     printf("        b->memory = malloc(bs);\n");
+    printf("        if (!b->memory) { free(b); return NULL; }\n");
     printf("        b->size = bs;\n");
     printf("        b->used = 0;\n");
     printf("        b->next = a->blocks;\n");
