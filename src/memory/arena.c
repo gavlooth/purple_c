@@ -213,6 +213,7 @@ void gen_arena_runtime(void) {
     printf("// Arena-aware allocators\n");
     printf("Obj* arena_mk_int(Arena* a, long val) {\n");
     printf("    Obj* o = arena_alloc(a, sizeof(Obj));\n");
+    printf("    if (!o) return NULL;\n");
     printf("    o->mark = 1; o->scc_id = -1; o->is_pair = 0; o->scan_tag = 0;\n");
     printf("    o->i = val;\n");
     printf("    return o;\n");
@@ -220,6 +221,7 @@ void gen_arena_runtime(void) {
 
     printf("Obj* arena_mk_pair(Arena* a, Obj* car, Obj* cdr) {\n");
     printf("    Obj* o = arena_alloc(a, sizeof(Obj));\n");
+    printf("    if (!o) return NULL;\n");
     printf("    o->mark = 1; o->scc_id = -1; o->is_pair = 1; o->scan_tag = 0;\n");
     printf("    o->a = car; o->b = cdr;\n");
     printf("    return o;\n");
