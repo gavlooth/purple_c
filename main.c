@@ -5,6 +5,7 @@
 #include <ctype.h>
 #include <stdarg.h>
 #include <errno.h>
+#include "util/dstring.h"
 
 /* 
  * ============================================================================ 
@@ -1885,9 +1886,23 @@ Value* h_let_default(Value* exp, Value* menv) {
         // Phase 2: Analyze shapes for optimal deallocation strategy
         analyze_shapes_expr(exp, shape_ctx);
 
-        // Build declarations and extend environment
-        char all_decls[8192] = "";
-        char all_frees[4096] = "";
+        // Build declarations and extend environment using dynamic strings
+        DString* all_decls = ds_new();
+        DString* all_frees = ds_new();
+        if (!all_decls || !all_frees) {
+            ds_free(all_decls);
+            ds_free(all_frees);
+            free_analysis_ctx(ctx);
+            free_shape_context(shape_ctx);
+            while (bind_list) {
+                BindingInfo* next = bind_list->next;
+                free(bind_list);
+                bind_list = next;
+            }
+            fprintf(stderr, "Error: OOM in let codegen\n");
+            return NIL;
+        }
+
         b = bind_list;
         while (b) {
             VarUsage* usage = find_var(ctx, b->sym->s);
@@ -1899,49 +1914,44 @@ Value* h_let_default(Value* exp, Value* menv) {
             ShapeInfo* shape_info = find_shape(shape_ctx, b->sym->s);
             Shape var_shape = shape_info ? shape_info->shape : SHAPE_UNKNOWN;
 
-            char decl[1024];
             char* val_str = (b->val->tag == T_CODE) ? b->val->s : val_to_str(b->val);
             const char* safe_val_str = val_str ? val_str : "NULL";
 
             // For non-code values in a code context, lift them
             if (b->val->tag != T_CODE) {
                 if (b->val->tag == T_INT) {
-                    sprintf(decl, "  Obj* %s = mk_int(%ld);\n", b->sym->s, b->val->i);
+                    ds_printf(all_decls, "  Obj* %s = mk_int(%ld);\n", b->sym->s, b->val->i);
                 } else {
-                    sprintf(decl, "  Obj* %s = %s;\n", b->sym->s, safe_val_str);
+                    ds_printf(all_decls, "  Obj* %s = %s;\n", b->sym->s, safe_val_str);
                 }
             } else if (escape_class == ESCAPE_NONE && !is_captured) {
-                sprintf(decl, "  Obj* %s = %s; // stack-candidate\n", b->sym->s, safe_val_str);
+                ds_printf(all_decls, "  Obj* %s = %s; // stack-candidate\n", b->sym->s, safe_val_str);
             } else {
-                sprintf(decl, "  Obj* %s = %s;\n", b->sym->s, safe_val_str);
+                ds_printf(all_decls, "  Obj* %s = %s;\n", b->sym->s, safe_val_str);
             }
-            strcat(all_decls, decl);
 
             // Phase 2: Use shape-based free strategy
             const char* free_fn = shape_free_strategy(var_shape);
 
             // Build free statements (in reverse order for proper stack-like cleanup)
             if (!is_captured && use_count > 0) {
-                char free_stmt[256];
-                sprintf(free_stmt, "  %s(%s); // ASAP Clean (shape: %s)\n",
-                        free_fn, b->sym->s,
-                        var_shape == SHAPE_TREE ? "TREE" :
-                        var_shape == SHAPE_DAG ? "DAG" :
-                        var_shape == SHAPE_CYCLIC ? "CYCLIC" : "UNKNOWN");
+                const char* shape_name = var_shape == SHAPE_TREE ? "TREE" :
+                                         var_shape == SHAPE_DAG ? "DAG" :
+                                         var_shape == SHAPE_CYCLIC ? "CYCLIC" : "UNKNOWN";
                 // Prepend to all_frees for reverse order
-                char temp[4096];
-                strcpy(temp, free_stmt);
-                strcat(temp, all_frees);
-                strcpy(all_frees, temp);
+                DString* new_frees = ds_new();
+                if (new_frees) {
+                    ds_printf(new_frees, "  %s(%s); // ASAP Clean (shape: %s)\n",
+                              free_fn, b->sym->s, shape_name);
+                    ds_append(new_frees, ds_cstr(all_frees));
+                    ds_free(all_frees);
+                    all_frees = new_frees;
+                }
             } else if (!is_captured && use_count == 0) {
                 // Unused - will free right after declaration in the block
-                char free_stmt[256];
-                sprintf(free_stmt, "  %s(%s); // ASAP: unused\n", free_fn, b->sym->s);
-                strcat(all_decls, free_stmt);
+                ds_printf(all_decls, "  %s(%s); // ASAP: unused\n", free_fn, b->sym->s);
             } else if (is_captured) {
-                char comment[256];
-                sprintf(comment, "  // %s captured by closure - no free\n", b->sym->s);
-                strcat(all_frees, comment);
+                ds_printf(all_frees, "  // %s captured by closure - no free\n", b->sym->s);
             }
 
             // Extend environment with code reference
@@ -1961,9 +1971,28 @@ Value* h_let_default(Value* exp, Value* menv) {
         int sres_owned = (!res || res->tag != T_CODE);
         char* sres = (res && res->tag == T_CODE) ? res->s : val_to_str(res);
 
-        // Build final block
-        char block[16384];
-        sprintf(block, "{\n%s  Obj* _res = %s;\n%s  _res;\n}", all_decls, sres ? sres : "NULL", all_frees);
+        // Build final block using dynamic string
+        DString* block = ds_new();
+        if (!block) {
+            ds_free(all_decls);
+            ds_free(all_frees);
+            if (sres_owned) free(sres);
+            free_analysis_ctx(ctx);
+            free_shape_context(shape_ctx);
+            while (bind_list) {
+                BindingInfo* next = bind_list->next;
+                free(bind_list);
+                bind_list = next;
+            }
+            fprintf(stderr, "Error: OOM in let codegen\n");
+            return NIL;
+        }
+        ds_printf(block, "{\n%s  Obj* _res = %s;\n%s  _res;\n}",
+                  ds_cstr(all_decls), sres ? sres : "NULL", ds_cstr(all_frees));
+
+        char* block_str = ds_take(block);
+        ds_free(all_decls);
+        ds_free(all_frees);
 
         if (sres_owned) free(sres);
         free_analysis_ctx(ctx);
@@ -1976,7 +2005,9 @@ Value* h_let_default(Value* exp, Value* menv) {
             bind_list = next;
         }
 
-        return mk_code(block);
+        Value* result = mk_code(block_str);
+        free(block_str);
+        return result;
     }
 
     // Interpretation mode: extend environment with all bindings
