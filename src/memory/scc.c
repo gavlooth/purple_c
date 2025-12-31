@@ -591,7 +591,9 @@ void gen_scc_runtime(void) {
     printf("                Obj* w;\n");
     printf("                do {\n");
     printf("                    w = tarjan_stack_pop();\n");
+    printf("                    if (!w) break;\n");
     printf("                    TarjanNode* w_node = get_tarjan_node(w);\n");
+    printf("                    if (!w_node) break;\n");
     printf("                    w_node->on_stack = 0;\n");
     printf("                    w->scc_id = scc->id;\n");
     printf("                    if (scc->member_count >= scc->capacity) {\n");
