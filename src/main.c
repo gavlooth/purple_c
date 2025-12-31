@@ -204,6 +204,7 @@ int main(int argc, char** argv) {
         if (expr) {
             Value* result = eval(expr, menv);
             char* str = val_to_str(result);
+            if (!str) str = strdup("(error)");
             if (result && result->tag == T_CODE) {
                 // Compiled code - output as expression
                 char* escaped = escape_for_comment(input_str);
@@ -231,6 +232,7 @@ int main(int argc, char** argv) {
         if (expr) {
             Value* result = eval(expr, menv);
             char* str = val_to_str(result);
+            if (!str) str = strdup("(error)");
             printf("  Obj* result = %s;\n", str);
             printf("  printf(\"Result: %%ld\\n\", result->i);\n");
             free(str);

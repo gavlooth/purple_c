@@ -145,7 +145,9 @@ Value* h_app_default(Value* exp, Value* menv) {
         return eval(body, body_menv);
     }
 
-    printf("Error: Not a function: %s\n", val_to_str(fn));
+    char* fn_str = val_to_str(fn);
+    printf("Error: Not a function: %s\n", fn_str ? fn_str : "(null)");
+    free(fn_str);
     return NIL;
 }
 
