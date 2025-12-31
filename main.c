@@ -713,6 +713,7 @@ void compute_liveness(CFG* cfg) {
 
             // live_out = union of successors' live_in
             char** new_live_out = malloc(64 * sizeof(char*));
+            if (!new_live_out) continue;  // Skip node on OOM
             int new_out_count = 0;
 
             for (int j = 0; j < node->succ_count; j++) {
@@ -724,6 +725,14 @@ void compute_liveness(CFG* cfg) {
 
             // live_in = uses(node) ∪ (live_out - defs(node))
             char** new_live_in = malloc(64 * sizeof(char*));
+            if (!new_live_in) {
+                // Cleanup new_live_out on failure
+                for (int j = 0; j < new_out_count; j++) {
+                    free(new_live_out[j]);
+                }
+                free(new_live_out);
+                continue;  // Skip node on OOM
+            }
             int new_in_count = 0;
 
             // Add uses
