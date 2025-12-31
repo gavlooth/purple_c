@@ -1802,7 +1802,9 @@ Value* h_app_default(Value* exp, Value* menv) {
         return eval(body, body_menv);
     }
     
-    printf("Error: Not a function: %s\n", val_to_str(fn));
+    char* fn_str = val_to_str(fn);
+    printf("Error: Not a function: %s\n", fn_str ? fn_str : "(null)");
+    free(fn_str);
     return NIL;
 }
 
@@ -1896,18 +1898,19 @@ Value* h_let_default(Value* exp, Value* menv) {
 
             char decl[1024];
             char* val_str = (b->val->tag == T_CODE) ? b->val->s : val_to_str(b->val);
+            const char* safe_val_str = val_str ? val_str : "NULL";
 
             // For non-code values in a code context, lift them
             if (b->val->tag != T_CODE) {
                 if (b->val->tag == T_INT) {
                     sprintf(decl, "  Obj* %s = mk_int(%ld);\n", b->sym->s, b->val->i);
                 } else {
-                    sprintf(decl, "  Obj* %s = %s;\n", b->sym->s, val_str);
+                    sprintf(decl, "  Obj* %s = %s;\n", b->sym->s, safe_val_str);
                 }
             } else if (escape_class == ESCAPE_NONE && !is_captured) {
-                sprintf(decl, "  Obj* %s = %s; // stack-candidate\n", b->sym->s, val_str);
+                sprintf(decl, "  Obj* %s = %s; // stack-candidate\n", b->sym->s, safe_val_str);
             } else {
-                sprintf(decl, "  Obj* %s = %s;\n", b->sym->s, val_str);
+                sprintf(decl, "  Obj* %s = %s;\n", b->sym->s, safe_val_str);
             }
             strcat(all_decls, decl);
 
@@ -1952,13 +1955,14 @@ Value* h_let_default(Value* exp, Value* menv) {
         body_menv->menv.h_let = menv->menv.h_let;
 
         Value* res = eval(body, body_menv);
-        char* sres = (res->tag == T_CODE) ? res->s : val_to_str(res);
+        int sres_owned = (!res || res->tag != T_CODE);
+        char* sres = (res && res->tag == T_CODE) ? res->s : val_to_str(res);
 
         // Build final block
         char block[16384];
-        sprintf(block, "{\n%s  Obj* _res = %s;\n%s  _res;\n}", all_decls, sres, all_frees);
+        sprintf(block, "{\n%s  Obj* _res = %s;\n%s  _res;\n}", all_decls, sres ? sres : "NULL", all_frees);
 
-        if (res->tag != T_CODE) free(sres);
+        if (sres_owned) free(sres);
         free_analysis_ctx(ctx);
         free_shape_context(shape_ctx);
 
@@ -2006,11 +2010,13 @@ Value* h_if_default(Value* exp, Value* menv) {
         Value* e = eval(else_expr, menv);
         char buf[2048];
         char* sc = c->s;
-        char* st = (t->tag == T_CODE) ? t->s : val_to_str(t);
-        char* se = (e->tag == T_CODE) ? e->s : val_to_str(e);
-        sprintf(buf, "(if %s %s %s)", sc, st, se);
-        if (t->tag != T_CODE) free(st);
-        if (e->tag != T_CODE) free(se);
+        int st_owned = (!t || t->tag != T_CODE);
+        int se_owned = (!e || e->tag != T_CODE);
+        char* st = (t && t->tag == T_CODE) ? t->s : val_to_str(t);
+        char* se = (e && e->tag == T_CODE) ? e->s : val_to_str(e);
+        sprintf(buf, "(if %s %s %s)", sc, st ? st : "NULL", se ? se : "NULL");
+        if (st_owned) free(st);
+        if (se_owned) free(se);
         return mk_code(buf);
     }
     
@@ -2100,9 +2106,10 @@ Value* eval(Value* expr, Value* menv) {
             Value* type_sym = eval(car(args), menv);
             Value* val = eval(car(cdr(args)), menv);
             char buf[256];
-            char* sval = (val->tag == T_CODE) ? val->s : val_to_str(val);
-            sprintf(buf, "scan_%s(%s); // ASAP Mark", type_sym->s, sval);
-            if (val->tag != T_CODE) free(sval);
+            int sval_owned = (!val || val->tag != T_CODE);
+            char* sval = (val && val->tag == T_CODE) ? val->s : val_to_str(val);
+            sprintf(buf, "scan_%s(%s); // ASAP Mark", type_sym->s, sval ? sval : "NULL");
+            if (sval_owned) free(sval);
             return mk_code(buf);
         }
 
@@ -2331,8 +2338,11 @@ int main(int argc, char** argv) {
         }
         if (result->tag == T_CODE)
             printf("  %s;\n", result->s);
-        else
-            printf("  // Result: %s\n", val_to_str(result));
+        else {
+            char* result_str = val_to_str(result);
+            printf("  // Result: %s\n", result_str ? result_str : "(null)");
+            free(result_str);
+        }
         
         printf("  flush_freelist();\n");
     }
