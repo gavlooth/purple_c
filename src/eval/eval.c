@@ -310,13 +310,13 @@ Value* h_let_default(Value* exp, Value* menv) {
         body_menv->menv.h_let = menv->menv.h_let;
 
         Value* res = eval(body, body_menv);
-        char* sres = (res->tag == T_CODE) ? res->s : val_to_str(res);
+        char* sres = (res && res->tag == T_CODE) ? res->s : val_to_str(res);
 
         DString* block = ds_new();
         ds_printf(block, "({\n%s  Obj* _res = %s;\n%s  _res;\n})",
                   ds_cstr(all_decls), sres, ds_cstr(all_frees));
 
-        if (res->tag != T_CODE) free(sres);
+        if (!res || res->tag != T_CODE) free(sres);
 
         ds_free(all_decls);
         ds_free(all_frees);
@@ -363,12 +363,12 @@ Value* h_if_default(Value* exp, Value* menv) {
     if (is_code(c)) {
         Value* t = eval(then_expr, menv);
         Value* e = eval(else_expr, menv);
-        char* st = (t->tag == T_CODE) ? t->s : val_to_str(t);
-        char* se = (e->tag == T_CODE) ? e->s : val_to_str(e);
+        char* st = (t && t->tag == T_CODE) ? t->s : val_to_str(t);
+        char* se = (e && e->tag == T_CODE) ? e->s : val_to_str(e);
         DString* ds = ds_new();
         ds_printf(ds, "((%s)->i ? (%s) : (%s))", c->s, st, se);
-        if (t->tag != T_CODE) free(st);
-        if (e->tag != T_CODE) free(se);
+        if (!t || t->tag != T_CODE) free(st);
+        if (!e || e->tag != T_CODE) free(se);
         char* code_str = ds_take(ds);
         Value* result = mk_code(code_str);
         free(code_str);
