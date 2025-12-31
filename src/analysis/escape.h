@@ -16,7 +16,7 @@ typedef struct VarUsage {
     char* name;
     int use_count;
     int last_use_depth;
-    int escape_class;
+    EscapeClass escape_class;
     int captured_by_lambda;
     int freed;
     struct VarUsage* next;
