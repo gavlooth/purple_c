@@ -127,11 +127,13 @@ void gen_exception_runtime(void) {
     printf("// Enter try block\n");
     printf("ExcFrame* exc_push() {\n");
     printf("    ExcFrame* frame = malloc(sizeof(ExcFrame));\n");
+    printf("    if (!frame) return NULL;\n");
     printf("    frame->exc.type = EXC_NONE;\n");
     printf("    frame->exc.message = NULL;\n");
     printf("    frame->exc.data = NULL;\n");
     printf("    frame->prev = EXC_STACK;\n");
     printf("    frame->cleanup_vars = malloc(16 * sizeof(void*));\n");
+    printf("    if (!frame->cleanup_vars) { free(frame); return NULL; }\n");
     printf("    frame->cleanup_count = 0;\n");
     printf("    frame->cleanup_capacity = 16;\n");
     printf("    EXC_STACK = frame;\n");
