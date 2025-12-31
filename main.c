@@ -1004,6 +1004,7 @@ Value* emit_c_call(const char* fn, Value* a, Value* b) {
 }
 
 Value* lift_value(Value* v) {
+    if (!v) return NIL;
     if (v->tag == T_CODE) return v;
     if (v->tag == T_INT) {
         char buf[64];
