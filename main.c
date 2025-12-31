@@ -1132,7 +1132,9 @@ OwnershipEdge* OWNERSHIP_GRAPH = NULL;
 
 void register_type(const char* name, TypeField* fields, int count) {
     TypeDef* t = malloc(sizeof(TypeDef));
+    if (!t) return;
     t->name = strdup(name);
+    if (!t->name) { free(t); return; }
     t->fields = fields;
     t->field_count = count;
     t->is_recursive = 0;
@@ -1168,9 +1170,17 @@ void build_ownership_graph() {
         for (int i = 0; i < t->field_count; i++) {
             if (t->fields[i].is_scannable) {
                 OwnershipEdge* e = malloc(sizeof(OwnershipEdge));
+                if (!e) continue;
                 e->from_type = strdup(t->name);
                 e->field_name = strdup(t->fields[i].name);
                 e->to_type = strdup(t->fields[i].type);
+                if (!e->from_type || !e->field_name || !e->to_type) {
+                    free(e->from_type);
+                    free(e->field_name);
+                    free(e->to_type);
+                    free(e);
+                    continue;
+                }
                 e->is_back_edge = 0;
                 e->next = OWNERSHIP_GRAPH;
                 OWNERSHIP_GRAPH = e;
@@ -1205,7 +1215,9 @@ void add_visit_state(const char* name, int color) {
         return;
     }
     VisitState* v = malloc(sizeof(VisitState));
+    if (!v) return;
     v->type_name = strdup(name);
+    if (!v->type_name) { free(v); return; }
     v->color = color;
     v->next = VISIT_STATES;
     VISIT_STATES = v;
