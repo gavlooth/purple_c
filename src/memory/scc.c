@@ -543,7 +543,7 @@ void gen_scc_runtime(void) {
     printf("        switch (frame->state) {\n");
     printf("        case TARJAN_INIT: {\n");
     printf("            TarjanNode* node = get_tarjan_node(v);\n");
-    printf("            if (!node) { TARJAN_OOM = 1; free(pop_work_frame(&work_stack)); return; }\n");
+    printf("            if (!node) { TARJAN_OOM = 1; while (work_stack) { free(pop_work_frame(&work_stack)); } return; }\n");
     printf("            if (node->index >= 0) {\n");
     printf("                free(pop_work_frame(&work_stack));\n");
     printf("                break;\n");
@@ -552,17 +552,17 @@ void gen_scc_runtime(void) {
     printf("            node->lowlink = TARJAN_INDEX;\n");
     printf("            TARJAN_INDEX++;\n");
     printf("            tarjan_stack_push(v);\n");
-    printf("            if (TARJAN_OOM) { free(pop_work_frame(&work_stack)); return; }\n");
+    printf("            if (TARJAN_OOM) { while (work_stack) { free(pop_work_frame(&work_stack)); } return; }\n");
     printf("            node->on_stack = 1;\n");
     printf("            frame->node = node;\n");
     printf("            frame->state = TARJAN_AFTER_A;\n\n");
 
     printf("            if (v->is_pair && v->a) {\n");
     printf("                TarjanNode* w = get_tarjan_node(v->a);\n");
-    printf("                if (!w) { TARJAN_OOM = 1; free(pop_work_frame(&work_stack)); return; }\n");
+    printf("                if (!w) { TARJAN_OOM = 1; while (work_stack) { free(pop_work_frame(&work_stack)); } return; }\n");
     printf("                if (w->index < 0) {\n");
     printf("                    frame->pushed_a = 1;\n");
-    printf("                    if (!push_work_frame(&work_stack, v->a, TARJAN_INIT)) { free(pop_work_frame(&work_stack)); return; }\n");
+    printf("                    if (!push_work_frame(&work_stack, v->a, TARJAN_INIT)) { while (work_stack) { free(pop_work_frame(&work_stack)); } return; }\n");
     printf("                } else if (w->on_stack) {\n");
     printf("                    if (node->lowlink > w->index) node->lowlink = w->index;\n");
     printf("                }\n");
@@ -574,17 +574,17 @@ void gen_scc_runtime(void) {
     printf("            TarjanNode* node = frame->node;\n");
     printf("            if (frame->pushed_a && v->is_pair && v->a) {\n");
     printf("                TarjanNode* w = get_tarjan_node(v->a);\n");
-    printf("                if (!w) { TARJAN_OOM = 1; free(pop_work_frame(&work_stack)); return; }\n");
+    printf("                if (!w) { TARJAN_OOM = 1; while (work_stack) { free(pop_work_frame(&work_stack)); } return; }\n");
     printf("                if (node->lowlink > w->lowlink) node->lowlink = w->lowlink;\n");
     printf("            }\n");
     printf("            frame->state = TARJAN_AFTER_B;\n\n");
 
     printf("            if (v->is_pair && v->b) {\n");
     printf("                TarjanNode* w = get_tarjan_node(v->b);\n");
-    printf("                if (!w) { TARJAN_OOM = 1; free(pop_work_frame(&work_stack)); return; }\n");
+    printf("                if (!w) { TARJAN_OOM = 1; while (work_stack) { free(pop_work_frame(&work_stack)); } return; }\n");
     printf("                if (w->index < 0) {\n");
     printf("                    frame->pushed_b = 1;\n");
-    printf("                    if (!push_work_frame(&work_stack, v->b, TARJAN_INIT)) { free(pop_work_frame(&work_stack)); return; }\n");
+    printf("                    if (!push_work_frame(&work_stack, v->b, TARJAN_INIT)) { while (work_stack) { free(pop_work_frame(&work_stack)); } return; }\n");
     printf("                } else if (w->on_stack) {\n");
     printf("                    if (node->lowlink > w->index) node->lowlink = w->index;\n");
     printf("                }\n");
@@ -596,16 +596,16 @@ void gen_scc_runtime(void) {
     printf("            TarjanNode* node = frame->node;\n");
     printf("            if (frame->pushed_b && v->is_pair && v->b) {\n");
     printf("                TarjanNode* w = get_tarjan_node(v->b);\n");
-    printf("                if (!w) { TARJAN_OOM = 1; free(pop_work_frame(&work_stack)); return; }\n");
+    printf("                if (!w) { TARJAN_OOM = 1; while (work_stack) { free(pop_work_frame(&work_stack)); } return; }\n");
     printf("                if (node->lowlink > w->lowlink) node->lowlink = w->lowlink;\n");
     printf("            }\n\n");
 
     printf("            if (node->lowlink == node->index) {\n");
     printf("                SCC* scc = malloc(sizeof(SCC));\n");
-    printf("                if (!scc) { TARJAN_OOM = 1; free(pop_work_frame(&work_stack)); return; }\n");
+    printf("                if (!scc) { TARJAN_OOM = 1; while (work_stack) { free(pop_work_frame(&work_stack)); } return; }\n");
     printf("                scc->id = SCC_NEXT_ID++;\n");
     printf("                scc->members = malloc(16 * sizeof(Obj*));\n");
-    printf("                if (!scc->members) { free(scc); TARJAN_OOM = 1; free(pop_work_frame(&work_stack)); return; }\n");
+    printf("                if (!scc->members) { free(scc); TARJAN_OOM = 1; while (work_stack) { free(pop_work_frame(&work_stack)); } return; }\n");
     printf("                scc->member_count = 0;\n");
     printf("                scc->capacity = 16;\n");
     printf("                scc->ref_count = 1;\n");
@@ -621,10 +621,10 @@ void gen_scc_runtime(void) {
     printf("                    w_node->on_stack = 0;\n");
     printf("                    w->scc_id = scc->id;\n");
     printf("                    if (scc->member_count >= scc->capacity) {\n");
-    printf("                        if (scc->capacity > INT_MAX / 2) { TARJAN_OOM = 1; free(pop_work_frame(&work_stack)); return; }\n");
+    printf("                        if (scc->capacity > INT_MAX / 2) { TARJAN_OOM = 1; while (work_stack) { free(pop_work_frame(&work_stack)); } return; }\n");
     printf("                        scc->capacity *= 2;\n");
     printf("                        Obj** new_members = realloc(scc->members, scc->capacity * sizeof(Obj*));\n");
-    printf("                        if (!new_members) { TARJAN_OOM = 1; free(pop_work_frame(&work_stack)); return; }\n");
+    printf("                        if (!new_members) { TARJAN_OOM = 1; while (work_stack) { free(pop_work_frame(&work_stack)); } return; }\n");
     printf("                        scc->members = new_members;\n");
     printf("                    }\n");
     printf("                    scc->members[scc->member_count++] = w;\n");
