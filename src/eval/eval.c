@@ -416,7 +416,6 @@ Value* eval(Value* expr, Value* menv) {
 
             // Second pass: evaluate and update bindings
             b = bindings;
-            Value* env_ptr = new_env;
             while (!is_nil(b)) {
                 Value* bind = car(b);
                 Value* val_expr = car(cdr(bind));
