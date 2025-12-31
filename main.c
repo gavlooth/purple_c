@@ -932,11 +932,11 @@ Value* mk_lambda(Value* params, Value* body, Value* env) {
 
 // -- Helpers --
 
-int is_nil(Value* v) { return v->tag == T_NIL; }
-int is_code(Value* v) { return v->tag == T_CODE; }
+int is_nil(Value* v) { return !v || v->tag == T_NIL; }
+int is_code(Value* v) { return v && v->tag == T_CODE; }
 
-Value* car(Value* v) { return (v->tag == T_CELL) ? v->cell.car : NIL; }
-Value* cdr(Value* v) { return (v->tag == T_CELL) ? v->cell.cdr : NIL; }
+Value* car(Value* v) { return (v && v->tag == T_CELL) ? v->cell.car : NIL; }
+Value* cdr(Value* v) { return (v && v->tag == T_CELL) ? v->cell.cdr : NIL; }
 
 int sym_eq(Value* s1, Value* s2) {
     if (s1->tag != T_SYM || s2->tag != T_SYM) return 0;
