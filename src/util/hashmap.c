@@ -66,6 +66,11 @@ void hashmap_free_entries(HashMap* map) {
 
 // Resize when load factor exceeded
 static void hashmap_resize(HashMap* map) {
+    // Check for integer overflow before doubling
+    if (map->bucket_count > SIZE_MAX / 2) {
+        map->had_alloc_failure = 1;
+        return;  // Cannot double, at max capacity
+    }
     size_t new_count = map->bucket_count * 2;
     HashEntry** new_buckets = calloc(new_count, sizeof(HashEntry*));
     if (!new_buckets) {
