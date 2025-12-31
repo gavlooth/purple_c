@@ -327,7 +327,7 @@ void analyze_shapes_expr(Value* expr, ShapeContext* ctx) {
                 if (strcmp(op->s, "set!") == 0) {
                     Value* target = car(args);
                     // Setting a field could create a cycle
-                    if (target->tag == T_SYM) {
+                    if (target && target->tag == T_SYM) {
                         add_shape(ctx, target->s, SHAPE_CYCLIC);
                     }
                     ctx->result_shape = SHAPE_CYCLIC;
