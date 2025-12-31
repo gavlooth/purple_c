@@ -609,6 +609,7 @@ void gen_scc_runtime(void) {
     printf("                scc->member_count = 0;\n");
     printf("                scc->capacity = 16;\n");
     printf("                scc->ref_count = 1;\n");
+    printf("                scc->next = NULL;\n");
     printf("                scc->result_next = *result;\n");
     printf("                *result = scc;\n\n");
 
