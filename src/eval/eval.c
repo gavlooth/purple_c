@@ -327,7 +327,10 @@ Value* h_let_default(Value* exp, Value* menv) {
             bind_list = next;
         }
 
-        return mk_code(ds_take(block));
+        char* code_str = ds_take(block);
+        Value* result = mk_code(code_str);
+        free(code_str);
+        return result;
     }
 
     BindingInfo* b = bind_list;
@@ -366,7 +369,10 @@ Value* h_if_default(Value* exp, Value* menv) {
         ds_printf(ds, "((%s)->i ? (%s) : (%s))", c->s, st, se);
         if (t->tag != T_CODE) free(st);
         if (e->tag != T_CODE) free(se);
-        return mk_code(ds_take(ds));
+        char* code_str = ds_take(ds);
+        Value* result = mk_code(code_str);
+        free(code_str);
+        return result;
     }
 
     if (!is_nil(c)) return eval(then_expr, menv);
@@ -457,7 +463,9 @@ Value* eval(Value* expr, Value* menv) {
                         DString* ds = ds_new();
                         ds_printf(ds, "(%s && %s)", sr, sn);
                         if (!is_code(next)) free(sn);
-                        result = mk_code(ds_take(ds));
+                        char* code_str = ds_take(ds);
+                        result = mk_code(code_str);
+                        free(code_str);
                         remaining = cdr(remaining);
                     }
                     return result;
@@ -483,7 +491,9 @@ Value* eval(Value* expr, Value* menv) {
                         DString* ds = ds_new();
                         ds_printf(ds, "(%s || %s)", sr, sn);
                         if (!is_code(next)) free(sn);
-                        result = mk_code(ds_take(ds));
+                        char* code_str = ds_take(ds);
+                        result = mk_code(code_str);
+                        free(code_str);
                         remaining = cdr(remaining);
                     }
                     return result;
@@ -527,7 +537,10 @@ Value* eval(Value* expr, Value* menv) {
             DString* ds = ds_new();
             ds_printf(ds, "scan_%s(%s); // ASAP Mark", type_sym->s, sval);
             if (val->tag != T_CODE) free(sval);
-            return mk_code(ds_take(ds));
+            char* code_str = ds_take(ds);
+            Value* result = mk_code(code_str);
+            free(code_str);
+            return result;
         }
 
         return menv->menv.h_app(expr, menv);
@@ -692,7 +705,10 @@ Value* prim_car(Value* args, Value* menv) {
     if (is_code(a)) {
         DString* ds = ds_new();
         ds_printf(ds, "(%s)->a", a->s);
-        return mk_code(ds_take(ds));
+        char* code_str = ds_take(ds);
+        Value* result = mk_code(code_str);
+        free(code_str);
+        return result;
     }
     if (a->tag != T_CELL) return NIL;
     return car(a);
@@ -705,7 +721,10 @@ Value* prim_cdr(Value* args, Value* menv) {
     if (is_code(a)) {
         DString* ds = ds_new();
         ds_printf(ds, "(%s)->b", a->s);
-        return mk_code(ds_take(ds));
+        char* code_str = ds_take(ds);
+        Value* result = mk_code(code_str);
+        free(code_str);
+        return result;
     }
     if (a->tag != T_CELL) return NIL;
     return cdr(a);
@@ -727,7 +746,10 @@ Value* prim_null(Value* args, Value* menv) {
     if (is_code(a)) {
         DString* ds = ds_new();
         ds_printf(ds, "is_nil(%s)", a->s);
-        return mk_code(ds_take(ds));
+        char* code_str = ds_take(ds);
+        Value* result = mk_code(code_str);
+        free(code_str);
+        return result;
     }
     return is_nil(a) ? SYM_T : NIL;
 }

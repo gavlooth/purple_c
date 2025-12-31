@@ -71,7 +71,10 @@ Value* emit_c_call(const char* fn, Value* a, Value* b) {
 
     free(sa);
     free(sb);
-    return mk_code(ds_take(ds));
+    char* code_str = ds_take(ds);
+    Value* result = mk_code(code_str);
+    free(code_str);
+    return result;
 }
 
 Value* lift_value(Value* v) {
@@ -80,7 +83,10 @@ Value* lift_value(Value* v) {
     if (v->tag == T_INT) {
         DString* ds = ds_new();
         ds_printf(ds, "mk_int(%ld)", v->i);
-        return mk_code(ds_take(ds));
+        char* code_str = ds_take(ds);
+        Value* result = mk_code(code_str);
+        free(code_str);
+        return result;
     }
     return v;
 }
