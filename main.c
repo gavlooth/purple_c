@@ -5,6 +5,7 @@
 #include <ctype.h>
 #include <stdarg.h>
 #include <errno.h>
+#include <limits.h>
 #include "util/dstring.h"
 
 /* 
@@ -613,6 +614,14 @@ CFGNode* mk_cfg_node(CFG* cfg, Value* expr) {
     }
 
     if (cfg->node_count >= cfg->node_capacity) {
+        if (cfg->node_capacity > INT_MAX / 2) {
+            free(n->succs);
+            free(n->preds);
+            free(n->live_in);
+            free(n->live_out);
+            free(n);
+            return NULL;
+        }
         int new_cap = cfg->node_capacity * 2;
         CFGNode** tmp = realloc(cfg->nodes, new_cap * sizeof(CFGNode*));
         if (!tmp) {
@@ -633,6 +642,7 @@ CFGNode* mk_cfg_node(CFG* cfg, Value* expr) {
 void add_cfg_edge(CFGNode* from, CFGNode* to) {
     if (!from || !to) return;
     if (from->succ_count >= from->succ_capacity) {
+        if (from->succ_capacity > INT_MAX / 2) return;
         int new_cap = from->succ_capacity * 2;
         CFGNode** tmp = realloc(from->succs, new_cap * sizeof(CFGNode*));
         if (!tmp) return;
@@ -642,6 +652,7 @@ void add_cfg_edge(CFGNode* from, CFGNode* to) {
     from->succs[from->succ_count++] = to;
 
     if (to->pred_count >= to->pred_capacity) {
+        if (to->pred_capacity > INT_MAX / 2) return;
         int new_cap = to->pred_capacity * 2;
         CFGNode** tmp = realloc(to->preds, new_cap * sizeof(CFGNode*));
         if (!tmp) return;
