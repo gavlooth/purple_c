@@ -122,8 +122,11 @@ void gen_dps_runtime(void) {
     printf("typedef Obj* (*MapFn)(Obj*);\n\n");
 
     printf("void map_dps(Dest* dests, MapFn f, Obj** inputs, int count) {\n");
+    printf("    if (!dests || !f || !inputs) return;\n");
     printf("    for (int i = 0; i < count; i++) {\n");
+    printf("        if (!dests[i].ptr) continue;\n");
     printf("        Obj* result = f(inputs[i]);\n");
+    printf("        if (!result) continue;\n");
     printf("        dests[i].ptr->mark = result->mark;\n");
     printf("        dests[i].ptr->scc_id = result->scc_id;\n");
     printf("        dests[i].ptr->is_pair = result->is_pair;\n");
@@ -141,11 +144,13 @@ void gen_dps_runtime(void) {
     printf("typedef Obj* (*FoldFn)(Obj*, Obj*);\n\n");
 
     printf("Obj* fold_dps(Dest* dest, FoldFn f, Obj* init, Obj** inputs, int count) {\n");
+    printf("    if (!dest || !dest->ptr) return NULL;\n");
     printf("    Obj* acc = init;\n");
     printf("    for (int i = 0; i < count; i++) {\n");
     printf("        acc = f(acc, inputs[i]);\n");
     printf("    }\n");
     printf("    // Write final result to destination\n");
+    printf("    if (!acc) return NULL;\n");
     printf("    dest->ptr->mark = acc->mark;\n");
     printf("    dest->ptr->scc_id = acc->scc_id;\n");
     printf("    dest->ptr->is_pair = acc->is_pair;\n");
