@@ -91,7 +91,7 @@ Shape lookup_shape(ShapeContext* ctx, Value* expr) {
 int may_alias(ShapeContext* ctx, Value* a, Value* b) {
     if (!a || !b) return 0;
     // Same variable definitely aliases
-    if (a->tag == T_SYM && b->tag == T_SYM && strcmp(a->s, b->s) == 0) {
+    if (a->tag == T_SYM && b->tag == T_SYM && a->s && b->s && strcmp(a->s, b->s) == 0) {
         return 1;
     }
     // Different literals never alias
@@ -100,7 +100,7 @@ int may_alias(ShapeContext* ctx, Value* a, Value* b) {
         return 0;
     }
     // Check alias groups if both are variables
-    if (a->tag == T_SYM && b->tag == T_SYM) {
+    if (a->tag == T_SYM && b->tag == T_SYM && a->s && b->s) {
         ShapeInfo* sa = find_shape(ctx, a->s);
         ShapeInfo* sb = find_shape(ctx, b->s);
         if (sa && sb && sa->alias_group == sb->alias_group) {
