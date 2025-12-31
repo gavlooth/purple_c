@@ -286,6 +286,14 @@ void analyze_back_edges(void) {
     }
 
     free(path);
+
+    // Free visit states created during DFS
+    while (VISIT_STATES) {
+        VisitState* next = VISIT_STATES->next;
+        free(VISIT_STATES->type_name);
+        free(VISIT_STATES);
+        VISIT_STATES = next;
+    }
 }
 
 // -- Field-Aware Scanner --
