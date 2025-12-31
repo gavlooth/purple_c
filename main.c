@@ -256,6 +256,11 @@ void analyze_shapes_expr(Value* expr, ShapeContext* ctx) {
             Value* op = car(expr);
             Value* args = cdr(expr);
 
+            if (!op) {
+                ctx->result_shape = SHAPE_UNKNOWN;
+                break;
+            }
+
             if (op->tag == T_SYM) {
                 // CONS creates tree structure (unless aliased args)
                 if (strcmp(op->s, "cons") == 0) {
