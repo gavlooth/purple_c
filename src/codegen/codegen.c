@@ -360,9 +360,11 @@ void gen_weak_ref_runtime(void) {
 
     printf("WeakRef* mk_weak_ref(void* target) {\n");
     printf("    WeakRef* w = malloc(sizeof(WeakRef));\n");
+    printf("    if (!w) return NULL;\n");
     printf("    w->target = target;\n");
     printf("    w->alive = 1;\n");
     printf("    WeakRefNode* node = malloc(sizeof(WeakRefNode));\n");
+    printf("    if (!node) { free(w); return NULL; }\n");
     printf("    node->ref = w;\n");
     printf("    node->next = WEAK_REF_HEAD;\n");
     printf("    WEAK_REF_HEAD = node;\n");
