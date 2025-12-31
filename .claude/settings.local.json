@@ -10,7 +10,10 @@
       "Bash(cat:*)",
       "WebFetch(domain:dl.acm.org)",
       "WebFetch(domain:www.microsoft.com)",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push)"
     ]
   }
 }
