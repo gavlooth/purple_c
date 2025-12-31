@@ -550,7 +550,7 @@ Value* eval(Value* expr, Value* menv) {
 
         if (sym_eq(op, SYM_SET_META)) {
             Value* key = eval(car(args), menv);
-            if (key->tag != T_SYM) key = car(args);
+            if (!key || key->tag != T_SYM) key = car(args);
             Value* val = eval(car(cdr(args)), menv);
             if (sym_eq_str(key, "add")) {
                 menv->menv.env = env_extend(menv->menv.env, mk_sym("+"), val);
