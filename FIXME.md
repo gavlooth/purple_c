@@ -168,3 +168,7 @@ Items below are grouped by status.
 
 52) **[Main]** Unescaped input in comments
     - Fix: Added `escape_for_comment()` helper that escapes newlines/tabs/control chars before printing in C comments
+
+53) **[Codegen]** `prim_null` generated `is_nil(x)` returning `int` instead of `Obj*`
+    - Fix: Changed `prim_null` to emit `mk_int(is_nil(x))` so the result is an `Obj*`
+    - Test: `NullLiftCodegen` in tests_break.sh

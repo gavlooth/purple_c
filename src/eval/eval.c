@@ -814,7 +814,8 @@ Value* prim_null(Value* args, Value* menv) {
     if (!a) return SYM_T;  // null? of nothing is true
     if (is_code(a)) {
         DString* ds = ds_new();
-        ds_printf(ds, "is_nil(%s)", a->s);
+        // is_nil returns int, but we need Obj* for runtime consistency
+        ds_printf(ds, "mk_int(is_nil(%s))", a->s);
         char* code_str = ds_take(ds);
         Value* result = mk_code(code_str);
         free(code_str);

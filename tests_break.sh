@@ -401,4 +401,8 @@ unit_test_expect_success "FieldAwareScannerSkipsWeak" \
   "src/types.c" \
   "src/util/dstring.c"
 
+# 38) null? with lift should generate compilable code (returns Obj*, not int)
+compile_expect_success "NullLiftCodegen" \
+  "(if (null? (lift 1)) (lift 2) (lift 3))"
+
 exit $FAIL
