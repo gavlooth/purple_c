@@ -112,7 +112,8 @@ int may_alias(ShapeContext* ctx, Value* a, Value* b) {
 }
 
 void analyze_shapes_expr(Value* expr, ShapeContext* ctx) {
-    if (!expr || !ctx || is_nil(expr)) {
+    if (!ctx) return;
+    if (!expr || is_nil(expr)) {
         ctx->result_shape = SHAPE_TREE;
         return;
     }
