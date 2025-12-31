@@ -2076,8 +2076,8 @@ int main(int argc, char** argv) {
     printf("Obj STACK_POOL[STACK_POOL_SIZE];\n");
     printf("int STACK_PTR = 0;\n\n");
 
-    printf("Obj* mk_int(long i) { Obj* x = malloc(sizeof(Obj)); x->mark=0; x->i=i; return x; }\n");
-    printf("Obj* mk_pair(Obj* a, Obj* b) { Obj* x = malloc(sizeof(Obj)); x->mark=0; x->a=a; x->b=b; return x; }\n\n");
+    printf("Obj* mk_int(long i) { Obj* x = malloc(sizeof(Obj)); if (!x) return NULL; x->mark=0; x->i=i; return x; }\n");
+    printf("Obj* mk_pair(Obj* a, Obj* b) { Obj* x = malloc(sizeof(Obj)); if (!x) return NULL; x->mark=0; x->a=a; x->b=b; return x; }\n\n");
 
     // Phase 2: Shape-based deallocation functions
     printf("// Phase 2: Shape-based deallocation (Ghiya-Hendren analysis)\n");
