@@ -144,6 +144,7 @@ void gen_arena_runtime(void) {
 
     printf("Arena* arena_create(size_t block_size) {\n");
     printf("    Arena* a = malloc(sizeof(Arena));\n");
+    printf("    if (!a) return NULL;\n");
     printf("    a->block_size = block_size ? block_size : 4096;\n");
     printf("    a->blocks = NULL;\n");
     printf("    a->current = NULL;\n");
