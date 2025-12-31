@@ -1393,6 +1393,7 @@ Value* env_extend(Value* env, Value* sym, Value* val) {
 
 AnalysisContext* mk_analysis_ctx() {
     AnalysisContext* ctx = malloc(sizeof(AnalysisContext));
+    if (!ctx) return NULL;
     ctx->vars = NULL;
     ctx->current_depth = 0;
     ctx->in_lambda = 0;
@@ -1424,7 +1425,12 @@ VarUsage* find_var(AnalysisContext* ctx, const char* name) {
 VarUsage* add_var(AnalysisContext* ctx, const char* name) {
     if (!ctx) return NULL;
     VarUsage* v = malloc(sizeof(VarUsage));
+    if (!v) return NULL;
     v->name = strdup(name);
+    if (!v->name) {
+        free(v);
+        return NULL;
+    }
     v->use_count = 0;
     v->last_use_depth = -1;
     v->escape_class = ESCAPE_NONE;
