@@ -156,6 +156,7 @@ void gen_exception_runtime(void) {
     printf("    if (!EXC_STACK || !ptr) return;\n");
     printf("    ExcFrame* frame = EXC_STACK;\n");
     printf("    if (frame->cleanup_count >= frame->cleanup_capacity) {\n");
+    printf("        if (frame->cleanup_capacity > INT_MAX / 2) return;  // Overflow protection\n");
     printf("        int new_cap = frame->cleanup_capacity * 2;\n");
     printf("        void** tmp = realloc(frame->cleanup_vars,\n");
     printf("            new_cap * sizeof(void*));\n");
