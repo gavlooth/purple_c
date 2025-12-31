@@ -535,6 +535,7 @@ void gen_scc_runtime(void) {
 
     printf("            if (v->is_pair && v->a) {\n");
     printf("                TarjanNode* w = get_tarjan_node(v->a);\n");
+    printf("                if (!w) { TARJAN_OOM = 1; free(pop_work_frame(&work_stack)); return; }\n");
     printf("                if (w->index < 0) {\n");
     printf("                    frame->pushed_a = 1;\n");
     printf("                    if (!push_work_frame(&work_stack, v->a, TARJAN_INIT)) { free(pop_work_frame(&work_stack)); return; }\n");
@@ -549,12 +550,14 @@ void gen_scc_runtime(void) {
     printf("            TarjanNode* node = frame->node;\n");
     printf("            if (frame->pushed_a && v->is_pair && v->a) {\n");
     printf("                TarjanNode* w = get_tarjan_node(v->a);\n");
+    printf("                if (!w) { TARJAN_OOM = 1; free(pop_work_frame(&work_stack)); return; }\n");
     printf("                if (node->lowlink > w->lowlink) node->lowlink = w->lowlink;\n");
     printf("            }\n");
     printf("            frame->state = TARJAN_AFTER_B;\n\n");
 
     printf("            if (v->is_pair && v->b) {\n");
     printf("                TarjanNode* w = get_tarjan_node(v->b);\n");
+    printf("                if (!w) { TARJAN_OOM = 1; free(pop_work_frame(&work_stack)); return; }\n");
     printf("                if (w->index < 0) {\n");
     printf("                    frame->pushed_b = 1;\n");
     printf("                    if (!push_work_frame(&work_stack, v->b, TARJAN_INIT)) { free(pop_work_frame(&work_stack)); return; }\n");
@@ -569,6 +572,7 @@ void gen_scc_runtime(void) {
     printf("            TarjanNode* node = frame->node;\n");
     printf("            if (frame->pushed_b && v->is_pair && v->b) {\n");
     printf("                TarjanNode* w = get_tarjan_node(v->b);\n");
+    printf("                if (!w) { TARJAN_OOM = 1; free(pop_work_frame(&work_stack)); return; }\n");
     printf("                if (node->lowlink > w->lowlink) node->lowlink = w->lowlink;\n");
     printf("            }\n\n");
 
