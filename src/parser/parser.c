@@ -128,7 +128,7 @@ Value* parse(void) {
                     // This is invalid.
                     // Let's just consume it and let the outer frame handle it.
                     // But we can't consume it here if it belongs to outer.
-                    
+
                     // Actually, if we see ')' and we are expecting an item (Quote), it's an error.
                     // But to be robust, maybe we just close the quote frame as is?
                     current_result = reverse_list(stack->list);
@@ -140,6 +140,11 @@ Value* parse(void) {
                      // Should be handled by closing check above
                      // If we are here, stack->closing_char != ')' or something.
                      parse_ptr++;
+                     // Free remaining stack frames before returning
+                     while (stack) {
+                         ParseFrame* f = pop_frame(&stack);
+                         free(f);
+                     }
                      return NIL;
                  }
             }
@@ -182,6 +187,12 @@ Value* parse(void) {
                 current_result = NULL;
             }
         }
+    }
+
+    // Free remaining stack frames on early exit (e.g., unclosed parentheses)
+    while (stack) {
+        ParseFrame* f = pop_frame(&stack);
+        free(f);
     }
 
     return NULL;
