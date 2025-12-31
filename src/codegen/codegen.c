@@ -3,6 +3,7 @@
 #include "../memory/scc.h"
 #include "../memory/deferred.h"
 #include "../util/dstring.h"
+#include <limits.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -235,6 +236,7 @@ static void detect_back_edges_dfs(const char* type_name, const char*** path, int
 
     // Ensure path capacity
     if (*path_len >= *path_cap) {
+        if (*path_cap > INT_MAX / 2) return;  // Overflow protection
         int new_cap = (*path_cap) * 2;
         const char** tmp = realloc(*path, new_cap * sizeof(char*));
         if (!tmp) return; // Allocation failed, keep original path intact
