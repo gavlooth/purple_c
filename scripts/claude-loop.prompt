@@ -2,12 +2,12 @@ You are running an automated fix loop in this repository.
 
 Goal (one per run):
 - First, read BUGS.md and FIXME.md. If either lists open/unresolved items, pick the earliest unresolved item and fix it.
-- Only when both files have no open/unresolved items, find ONE concrete issue (failing test, compiler error, clear bug, crash, UB, TODO/FIXME with evidence) and fix it.
+- Only when both files have no open/unresolved items, find ONE concrete issue (failing test, compiler error, clear bug, crash, UB, TODO/FIXME with evidence, implementation gap) and fix it.
 - Keep the change minimal and safe.
 
 Constraints:
 - Follow all project constraints in CLAUDE.md and AGENTS.md (ASAP-first; no stop-the-world / GC-style pauses).
-- Do not refactor broadly or change architecture.
+- Do not  change architecture. you can refactor if you find an implementation gap and is needed, otherwise don't.
 - Do not add new features.
 - add tests
 - commit and push changes; 
