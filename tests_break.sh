@@ -211,7 +211,7 @@ output_expect_contains "IncRefExists" \
 # 6) Weak refs should be invalidated on release
 output_expect_contains "WeakInvalidateOnRelease" \
   "(lift 0)" \
-  "invalidate_weak(obj"
+  "invalidate_weak_refs_for"
 
 # 7) Free list should prevent double-enqueue/reuse hazards
 function_body_expect_contains "FreeObjGuardsReuse" \

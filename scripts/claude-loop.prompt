@@ -9,7 +9,8 @@ Constraints:
 - Follow all project constraints in CLAUDE.md and AGENTS.md (ASAP-first; no stop-the-world / GC-style pauses).
 - Do not refactor broadly or change architecture.
 - Do not add new features.
-- Do not run git commit; leave changes unstaged.
+- add tests
+- commit and push changes; 
 
 Validation:
 - Prefer targeted checks. If needed, run: `make test` (or `./tests.sh`).

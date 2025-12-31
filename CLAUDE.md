@@ -1,5 +1,17 @@
 # Purple C Scratch - ASAP Memory Management
 
+## Core Invariants
+
+These are the non-negotiable principles of Purple C's memory management:
+
+1. **No stop-the-world GC is the central invariant** — No global heap traversals, no pauses.
+2. **ASAP is the foundation, not the entire solution** — Compile-time free insertion is the baseline; other techniques layer on top.
+3. **Reference counting is acceptable and expected** — RC is a valid tool for DAGs and shared data.
+4. **Cycles are handled incrementally and locally** — Per-object or per-subgraph, never global.
+5. **Correctness is preserved even when optimizations are disabled** — The system must be memory-safe with only ASAP enabled.
+
+---
+
 ## CRITICAL: ASAP is NOT Garbage Collection
 
 **ASAP (As Static As Possible)** is a **compile-time static memory management** strategy.

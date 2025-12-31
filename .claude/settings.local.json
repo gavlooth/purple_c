@@ -6,7 +6,11 @@
       "Bash(./tests.sh)",
       "Bash(make clean:*)",
       "Bash(make:*)",
-      "Bash(./purple_c)"
+      "Bash(./purple_c)",
+      "Bash(cat:*)",
+      "WebFetch(domain:dl.acm.org)",
+      "WebFetch(domain:www.microsoft.com)",
+      "WebFetch(domain:github.com)"
     ]
   }
 }

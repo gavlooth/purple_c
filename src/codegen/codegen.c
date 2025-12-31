@@ -785,6 +785,22 @@ void gen_runtime_header(void) {
     printf("    x->mark++;\n");
     printf("}\n\n");
 
+    // RC Optimization: Direct free for proven-unique references (Lobster-style)
+    printf("/* RC Optimization: Direct free for proven-unique references */\n");
+    printf("/* When compile-time analysis proves a reference is the only one, skip RC check */\n");
+    printf("void free_unique(Obj* x) {\n");
+    printf("    if (!x) return;\n");
+    printf("    if (is_stack_obj(x)) return;\n");
+    printf("    /* Proven unique at compile time - no RC check needed */\n");
+    printf("    if (x->is_pair) {\n");
+    printf("        /* Children might not be unique, use dec_ref for safety */\n");
+    printf("        dec_ref(x->a);\n");
+    printf("        dec_ref(x->b);\n");
+    printf("    }\n");
+    printf("    invalidate_weak_refs_for(x);\n");
+    printf("    free(x);\n");
+    printf("}\n\n");
+
     // Free list operations
     printf("void free_obj(Obj* x) {\n");
     printf("    if (!x) return;\n");
