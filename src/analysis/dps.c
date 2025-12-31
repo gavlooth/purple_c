@@ -109,10 +109,12 @@ void gen_dps_runtime(void) {
     // DPS-aware add function
     printf("// DPS arithmetic - write result to destination\n");
     printf("Obj* add_dps(Dest* dest, Obj* a, Obj* b) {\n");
+    printf("    if (!a || !b) return write_int(dest, 0);\n");
     printf("    return write_int(dest, a->i + b->i);\n");
     printf("}\n\n");
 
     printf("Obj* sub_dps(Dest* dest, Obj* a, Obj* b) {\n");
+    printf("    if (!a || !b) return write_int(dest, 0);\n");
     printf("    return write_int(dest, a->i - b->i);\n");
     printf("}\n\n");
 
