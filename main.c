@@ -2157,6 +2157,7 @@ int main(int argc, char** argv) {
 
     printf("// Runtime Header\n");
     printf("#include <stdlib.h>\n");
+    printf("#include <stdint.h>\n");
     printf("typedef struct Obj { int mark; union { long i; struct { struct Obj *a, *b; }; }; } Obj;\n\n");
 
     // Phase 5: Dynamic Free List (linked list instead of fixed array)
@@ -2171,6 +2172,15 @@ int main(int argc, char** argv) {
     printf("Obj STACK_POOL[STACK_POOL_SIZE];\n");
     printf("int STACK_PTR = 0;\n\n");
 
+    // Helper function to check if pointer is in stack pool (using uintptr_t to avoid UB)
+    printf("// Helper to check stack allocation (uses uintptr_t to avoid UB)\n");
+    printf("static int is_stack_obj(Obj* x) {\n");
+    printf("    uintptr_t px = (uintptr_t)x;\n");
+    printf("    uintptr_t start = (uintptr_t)&STACK_POOL[0];\n");
+    printf("    uintptr_t end = (uintptr_t)&STACK_POOL[STACK_POOL_SIZE];\n");
+    printf("    return px >= start && px < end;\n");
+    printf("}\n\n");
+
     printf("Obj* mk_int(long i) { Obj* x = malloc(sizeof(Obj)); if (!x) return NULL; x->mark=0; x->i=i; return x; }\n");
     printf("Obj* mk_pair(Obj* a, Obj* b) { Obj* x = malloc(sizeof(Obj)); if (!x) return NULL; x->mark=0; x->a=a; x->b=b; return x; }\n\n");
 
@@ -2179,7 +2189,7 @@ int main(int argc, char** argv) {
     printf("// TREE: No sharing, direct free without refcount\n");
     printf("void free_tree(Obj* x) {\n");
     printf("  if (!x) return;\n");
-    printf("  if (x >= STACK_POOL && x < STACK_POOL + STACK_POOL_SIZE) return;\n");
+    printf("  if (is_stack_obj(x)) return;\n");
     printf("  // For tree-shaped data, recursively free children\n");
     printf("  if (x->a) free_tree(x->a);\n");
     printf("  if (x->b) free_tree(x->b);\n");
@@ -2189,7 +2199,7 @@ int main(int argc, char** argv) {
     printf("// DAG: Sharing without cycles, use reference counting\n");
     printf("void dec_ref(Obj* x) {\n");
     printf("  if (!x) return;\n");
-    printf("  if (x >= STACK_POOL && x < STACK_POOL + STACK_POOL_SIZE) return;\n");
+    printf("  if (is_stack_obj(x)) return;\n");
     printf("  // Simple refcount decrement (assumes mark field used as refcount)\n");
     printf("  x->mark--;\n");
     printf("  if (x->mark <= 0) {\n");
@@ -2202,7 +2212,7 @@ int main(int argc, char** argv) {
     printf("// CYCLIC: May have cycles, needs deferred collection\n");
     printf("void dec_ref_cyclic(Obj* x) {\n");
     printf("  if (!x) return;\n");
-    printf("  if (x >= STACK_POOL && x < STACK_POOL + STACK_POOL_SIZE) return;\n");
+    printf("  if (is_stack_obj(x)) return;\n");
     printf("  // Add to free list for batch processing (arena-style)\n");
     printf("  free_obj(x);\n");
     printf("}\n\n");
@@ -2228,7 +2238,7 @@ int main(int argc, char** argv) {
     printf("void free_obj(Obj* x) {\n");
     printf("  if (!x) return;\n");
     printf("  // Check if stack-allocated (don't free stack objects)\n");
-    printf("  if (x >= STACK_POOL && x < STACK_POOL + STACK_POOL_SIZE) return;\n");
+    printf("  if (is_stack_obj(x)) return;\n");
     printf("  FreeNode* n = malloc(sizeof(FreeNode));\n");
     printf("  n->obj = x;\n");
     printf("  n->next = FREE_HEAD;\n");
