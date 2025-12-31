@@ -20,6 +20,48 @@ typedef struct VisitState {
 
 static VisitState* VISIT_STATES = NULL;
 
+// -- Back-Edge Naming Heuristics (from Go implementation) --
+// Field names that suggest back-edges in ownership cycles
+static const char* BACK_EDGE_HINTS[] = {
+    "parent", "owner", "container",  // Points to ancestor/owner
+    "prev", "previous", "back",      // Reverse direction in sequences
+    "up", "outer",                   // Hierarchical back-references
+    NULL
+};
+
+// Check if a field name matches a back-edge naming pattern
+static int is_back_edge_hint(const char* field_name) {
+    if (!field_name) return 0;
+
+    // Convert to lowercase for comparison
+    char lower[256];
+    int i;
+    for (i = 0; field_name[i] && i < 255; i++) {
+        lower[i] = (field_name[i] >= 'A' && field_name[i] <= 'Z')
+                   ? field_name[i] + 32 : field_name[i];
+    }
+    lower[i] = '\0';
+
+    for (int j = 0; BACK_EDGE_HINTS[j]; j++) {
+        if (strstr(lower, BACK_EDGE_HINTS[j])) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+// Check if type already has a weak pointer to target_type
+static int has_weak_to(TypeDef* t, const char* target_type) {
+    for (int i = 0; i < t->field_count; i++) {
+        if (t->fields[i].is_scannable &&
+            t->fields[i].strength == FIELD_WEAK &&
+            strcmp(t->fields[i].type, target_type) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 // -- Code Emission --
 
 static int val_to_c_expr_rec(Value* v, DString* ds) {
@@ -226,20 +268,126 @@ static void mark_field_weak(const char* type_name, const char* field_name) {
     }
 }
 
-static void detect_back_edges_dfs(const char* type_name, const char*** path, int* path_len, int* path_cap) {
+// Phase 1: Apply naming heuristics to mark obvious back-edges
+static void apply_naming_heuristics(void) {
+    printf("// Phase 1: Applying naming heuristics for back-edge detection\n");
+
+    OwnershipEdge* e = OWNERSHIP_GRAPH;
+    while (e) {
+        if (is_back_edge_hint(e->field_name)) {
+            e->is_back_edge = 1;
+            mark_field_weak(e->from_type, e->field_name);
+        }
+        e = e->next;
+    }
+}
+
+// Phase 2: Detect second pointers to same type
+// Example: Node has (next Node) and (prev Node) - if prev wasn't caught by naming, mark it weak
+static void detect_second_pointers(void) {
+    printf("// Phase 2: Detecting second pointers to same type\n");
+
+    TypeDef* t = TYPE_REGISTRY;
+    while (t) {
+        // Track first strong pointer to each target type
+        // For simplicity, use linear scan (types typically have few fields)
+        char* first_target[64];   // target type
+        int first_count = 0;
+
+        for (int i = 0; i < t->field_count && first_count < 64; i++) {
+            TypeField* f = &t->fields[i];
+            if (!f->is_scannable || f->strength == FIELD_WEAK) continue;
+
+            // If there's already a weak pointer to this type, skip
+            if (has_weak_to(t, f->type)) continue;
+
+            // Check if we've seen this target type before
+            int found = 0;
+            for (int j = 0; j < first_count; j++) {
+                if (strcmp(first_target[j], f->type) == 0) {
+                    // Second pointer to same type - mark it weak
+                    f->strength = FIELD_WEAK;
+                    printf("// AUTO-WEAK (second pointer): %s.%s\n", t->name, f->name);
+
+                    // Update ownership graph
+                    OwnershipEdge* e = OWNERSHIP_GRAPH;
+                    while (e) {
+                        if (strcmp(e->from_type, t->name) == 0 &&
+                            strcmp(e->field_name, f->name) == 0) {
+                            e->is_back_edge = 1;
+                            break;
+                        }
+                        e = e->next;
+                    }
+                    found = 1;
+                    break;
+                }
+            }
+
+            if (!found) {
+                // First pointer to this type - record it
+                first_target[first_count] = f->type;
+                first_count++;
+            }
+        }
+        t = t->next;
+    }
+}
+
+// Check if cycle from 'from' to 'to' is already broken by existing back-edges
+static int is_cycle_already_broken(const char* from_type, const char* to_type,
+                                    const char** path, int path_len) {
+    // For self-loops
+    if (strcmp(from_type, to_type) == 0) {
+        OwnershipEdge* e = OWNERSHIP_GRAPH;
+        while (e) {
+            if (strcmp(e->from_type, from_type) == 0 &&
+                strcmp(e->to_type, to_type) == 0 &&
+                e->is_back_edge) {
+                return 1;
+            }
+            e = e->next;
+        }
+        return 0;
+    }
+
+    // For longer cycles, check if any edge on the path is already a back-edge
+    for (int i = 0; i < path_len; i++) {
+        if (strcmp(path[i], to_type) == 0) {
+            // Found the cycle start, check edges from to_type onwards
+            for (int j = i; j < path_len - 1; j++) {
+                OwnershipEdge* e = OWNERSHIP_GRAPH;
+                while (e) {
+                    if (strcmp(e->from_type, path[j]) == 0 &&
+                        strcmp(e->to_type, path[j + 1]) == 0 &&
+                        e->is_back_edge) {
+                        return 1;
+                    }
+                    e = e->next;
+                }
+            }
+            break;
+        }
+    }
+    return 0;
+}
+
+// Phase 3: DFS cycle detection (only marks if cycle not already broken)
+static void detect_back_edges_dfs_v2(const char* type_name, const char*** path,
+                                      int* path_len, int* path_cap) {
     VisitState* v = find_visit_state(type_name);
 
-    if (v && v->color == 1) return;
-    if (v && v->color == 2) return;
+    if (v && v->color == 1) return;  // In current path
+    if (v && v->color == 2) return;  // Already finished
 
     add_visit_state(type_name, 1);
 
     // Ensure path capacity
     if (*path_len >= *path_cap) {
-        if (*path_cap > INT_MAX / 2) return;  // Overflow protection
+        if (*path_cap > INT_MAX / 2) return;
         int new_cap = (*path_cap) * 2;
         const char** tmp = realloc(*path, new_cap * sizeof(char*));
-        if (!tmp) return; // Allocation failed, keep original path intact
+        if (!tmp) return;
         *path = tmp;
         *path_cap = new_cap;
     }
@@ -249,14 +397,26 @@ static void detect_back_edges_dfs(const char* type_name, const char*** path, int
 
     OwnershipEdge* e = OWNERSHIP_GRAPH;
     while (e) {
-        if (strcmp(e->from_type, type_name) == 0) {
+        if (strcmp(e->from_type, type_name) == 0 && !e->is_back_edge) {
+            // Check if target is in current path (potential cycle)
+            int is_cycle = 0;
             for (int i = 0; i < *path_len; i++) {
                 if (strcmp((*path)[i], e->to_type) == 0) {
-                    e->is_back_edge = 1;
-                    mark_field_weak(e->from_type, e->field_name);
+                    is_cycle = 1;
+                    break;
                 }
             }
-            detect_back_edges_dfs(e->to_type, path, path_len, path_cap);
+
+            if (is_cycle) {
+                // Only mark as back-edge if cycle isn't already broken
+                if (!is_cycle_already_broken(type_name, e->to_type, *path, *path_len)) {
+                    e->is_back_edge = 1;
+                    mark_field_weak(e->from_type, e->field_name);
+                    printf("// AUTO-WEAK (DFS cycle): %s.%s\n", e->from_type, e->field_name);
+                }
+            } else {
+                detect_back_edges_dfs_v2(e->to_type, path, path_len, path_cap);
+            }
         }
         e = e->next;
     }
@@ -266,6 +426,17 @@ static void detect_back_edges_dfs(const char* type_name, const char*** path, int
 }
 
 void analyze_back_edges(void) {
+    printf("// === Three-Phase Back-Edge Detection ===\n");
+
+    // Phase 1: Naming heuristics (prev, parent, owner, etc.)
+    apply_naming_heuristics();
+
+    // Phase 2: Second-pointer detection
+    detect_second_pointers();
+
+    // Phase 3: DFS-based cycle detection for remaining edges
+    printf("// Phase 3: DFS cycle detection for remaining edges\n");
+
     int path_cap = 256;
     int path_len = 0;
     const char** path = malloc(path_cap * sizeof(char*));
@@ -282,7 +453,7 @@ void analyze_back_edges(void) {
     TypeDef* t = TYPE_REGISTRY;
     while (t) {
         if (find_visit_state(t->name) == NULL) {
-            detect_back_edges_dfs(t->name, &path, &path_len, &path_cap);
+            detect_back_edges_dfs_v2(t->name, &path, &path_len, &path_cap);
         }
         t = t->next;
     }
@@ -296,6 +467,8 @@ void analyze_back_edges(void) {
         free(VISIT_STATES);
         VISIT_STATES = next;
     }
+
+    printf("// === Back-Edge Detection Complete ===\n\n");
 }
 
 // -- Field-Aware Scanner --
