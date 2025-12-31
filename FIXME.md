@@ -9,64 +9,7 @@ Items below are grouped by status.
 
 ## Open (no failing break test yet)
 
-28) **[Concurrent]** Unchecked `malloc` in `concurrent.c` (host & generated)
-    - Functions: `conc_mk_int`, `conc_mk_pair`, `channel_create`, `spawn_thread`
-    - Risk: Segfault on OOM
-
-29) **[Arena]** Unchecked `malloc` in `arena_register_external` (host & generated)
-    - Risk: Segfault on OOM
-
-30) **[SCC]** Unchecked `malloc`/`realloc` in generated SCC runtime
-    - Location: `gen_scc_runtime` (generated `tarjan_strongconnect`)
-    - Risk: Segfault or memory corruption on OOM
-
-31) **[HashMap]** Silent failure on allocation
-    - `hashmap_put`: Drops entry if `malloc` fails
-    - `hashmap_resize`: Skips resize if `calloc` fails (degraded performance)
-
-32) **[Deferred]** Silent failure in `defer_decrement` (host & generated)
-    - Risk: Memory leak if `malloc` fails (decrement lost)
-
-33) **[Compiler]** Silent failure in `h_let_default` allocation
-    - Risk: Skips binding on OOM, leading to compilation error (unbound var) or runtime undefined behavior
-
-34) **[Compiler]** Invalid C codegen for complex literals in `let`
-    - Issue: `let` binds `val_to_str` directly. Lists/Symbols produce invalid C (e.g., `Obj* x = (1 2);`)
-
-35) **[Compiler]** `letrec` value placeholder semantics
-    - Issue: Referencing a `letrec` variable in its own definition returns `NIL` instead of error/looping
-
-36) **[Memory]** Silent failure in `compiler_arena_register_string`
-    - Risk: Leaks `strdup`ed strings on OOM if node allocation fails
-
-37) **[Parser]** `strtol` error checking missing
-    - `strtol` in `parser.c` doesn't check `errno` for overflow.
-    - Fix: Added errno check and error handling for ERANGE
-
-38) **[Codegen]** Unescaped string literals
-    - `val_to_c_expr` in `codegen.c` dumps string content directly. Input `(print "\"; system(\"rm -rf /\"); //")` executes arbitrary C.
-
-39) **[Analysis]** Silent failure in `find_free_vars`
-    - `realloc` failure causes early return, resulting in incomplete closure analysis and runtime crashes (missing captures).
-
-40) **[Parser]** Mismatched parentheses handling
-    - Unexpected `)` causes early return of `NIL` or consumes loop without error, potentially masking syntax errors.
-
-42) **[Main]** Unescaped input in comments — **RESOLVED**
-    - `printf("// Expression: %s", input_str)` breaks if input contains newlines.
-    - Fix: Added `escape_for_comment()` helper that escapes newlines/tabs/control chars before printing
-
-43) **[DPS]** Memory safety in `analyze_dps`
-    - Unchecked `malloc` in `analyze_dps`.
-
-44) **[Exception]** `realloc` logic error in generated runtime
-    - `exc_register_cleanup`: `realloc` failure leads to NULL dereference (segfault) and memory leak.
-
-45) **[Exception]** Unsafe `longjmp` usage
-    - `exc_throw` only cleans up current frame. If nesting logic changes to search for handlers, intermediate cleanups would be skipped.
-
-46) **[Exception]** Unchecked memory in host `exception.c`
-    - `track_alloc` uses unchecked `malloc`/`strdup`.
+- None
 
 ## Resolved (break tests passing)
 
