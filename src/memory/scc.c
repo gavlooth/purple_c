@@ -492,6 +492,7 @@ void gen_scc_runtime(void) {
     printf("        free(s);\n");
     printf("    }\n");
     printf("    TARJAN_INDEX = 0;\n");
+    printf("    TARJAN_OOM = 0;\n");
     printf("}\n\n");
 
     // Generate iterative tarjan_strongconnect implementation
