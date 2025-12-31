@@ -1007,8 +1007,10 @@ char* list_to_str(Value* v) {
     char buf[1024] = "(";
     while (!is_nil(v)) {
         char* s = val_to_str(car(v));
-        strcat(buf, s);
-        free(s);
+        if (s) {
+            strcat(buf, s);
+            free(s);
+        }
         v = cdr(v);
         if (!is_nil(v)) strcat(buf, " ");
     }
