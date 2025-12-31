@@ -2160,12 +2160,25 @@ Value* eval(Value* expr, Value* menv) {
         if (sym_eq(op, SYM_SCAN)) {
             Value* type_sym = eval(car(args), menv);
             Value* val = eval(car(cdr(args)), menv);
-            char buf[256];
+            // Guard: type_sym must be a symbol
+            if (!type_sym || type_sym->tag != T_SYM || !type_sym->s) {
+                return NIL;
+            }
             int sval_owned = (!val || val->tag != T_CODE);
             char* sval = (val && val->tag == T_CODE) ? val->s : val_to_str(val);
-            sprintf(buf, "scan_%s(%s); // ASAP Mark", type_sym->s, sval ? sval : "NULL");
+            // Use DString for dynamic allocation to avoid buffer overflow
+            DString* ds = ds_new();
+            if (!ds) {
+                if (sval_owned) free(sval);
+                return NIL;
+            }
+            ds_printf(ds, "scan_%s(%s); // ASAP Mark", type_sym->s, sval ? sval : "NULL");
+            char* result = ds_take(ds);
             if (sval_owned) free(sval);
-            return mk_code(buf);
+            if (!result) return NIL;
+            Value* code = mk_code(result);
+            free(result);
+            return code;
         }
 
         // Application Handler

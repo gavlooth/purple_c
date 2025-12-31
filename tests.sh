@@ -59,6 +59,13 @@ run_test "ASAP SCAN" \
     "(scan 'List (lift 1))" \
     "scan_List(mk_int(1)); // ASAP Mark"
 
+# 5b. ASAP SCAN with non-symbol type argument (should not crash)
+# Before fix: would crash with NULL dereference
+# After fix: returns NIL gracefully
+run_test "ASAP-ScanNonSymbol" \
+    "(+ (scan 42 (lift 1)) 0)" \
+    "Result:"
+
 # 6. Recursive Structure (List Scanner Generation)
 # The compiler prints the generated scanner at startup
 run_test "Scanner Generation" \
