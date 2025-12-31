@@ -1016,29 +1016,39 @@ int sym_eq_str(Value* s1, const char* s2) {
 char* val_to_str(Value* v);
 
 char* list_to_str(Value* v) {
-    char buf[1024] = "(";
-    while (!is_nil(v)) {
+    DString* ds = ds_new();
+    if (!ds) return NULL;
+    ds_append_char(ds, '(');
+    while (v && !is_nil(v)) {
         char* s = val_to_str(car(v));
         if (s) {
-            strcat(buf, s);
+            ds_append(ds, s);
             free(s);
         }
         v = cdr(v);
-        if (!is_nil(v)) strcat(buf, " ");
+        if (v && !is_nil(v)) ds_append_char(ds, ' ');
     }
-    strcat(buf, ")");
-    return strdup(buf);
+    ds_append_char(ds, ')');
+    return ds_take(ds);
 }
 
 char* val_to_str(Value* v) {
     if (!v) return strdup("()");  // NULL treated as NIL
-    char buf[4096];
+    DString* ds;
     switch (v->tag) {
-        case T_INT: sprintf(buf, "%ld", v->i); return strdup(buf);
-        case T_SYM: return strdup(v->s);
-        case T_CODE: 
-            sprintf(buf, "/* CODE */ %s", v->s); 
-            return strdup(buf);
+        case T_INT:
+            ds = ds_new();
+            if (!ds) return NULL;
+            ds_append_int(ds, v->i);
+            return ds_take(ds);
+        case T_SYM:
+            return v->s ? strdup(v->s) : NULL;
+        case T_CODE:
+            ds = ds_new();
+            if (!ds) return NULL;
+            ds_append(ds, "/* CODE */ ");
+            if (v->s) ds_append(ds, v->s);
+            return ds_take(ds);
         case T_CELL: return list_to_str(v);
         case T_NIL: return strdup("()");
         case T_PRIM: return strdup("#<prim>");
