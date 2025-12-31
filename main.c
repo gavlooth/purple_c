@@ -1176,6 +1176,9 @@ void mark_field_weak(const char* type_name, const char* field_name) {
     }
 }
 
+// Maximum path depth for back-edge detection (prevents buffer overflow)
+#define BACK_EDGE_PATH_MAX 256
+
 void detect_back_edges_dfs(const char* type_name, const char* path[], int path_len) {
     VisitState* v = find_visit_state(type_name);
 
@@ -1183,6 +1186,13 @@ void detect_back_edges_dfs(const char* type_name, const char* path[], int path_l
     if (v && v->color == 1) return;
     // If black (fully explored), skip
     if (v && v->color == 2) return;
+
+    // Prevent buffer overflow in path array
+    if (path_len >= BACK_EDGE_PATH_MAX) {
+        fprintf(stderr, "Warning: type graph depth exceeds %d, skipping back-edge detection\n",
+                BACK_EDGE_PATH_MAX);
+        return;
+    }
 
     // Mark as gray (being visited)
     add_visit_state(type_name, 1);
@@ -1214,7 +1224,7 @@ void detect_back_edges_dfs(const char* type_name, const char* path[], int path_l
 }
 
 void analyze_back_edges() {
-    const char* path[256];
+    const char* path[BACK_EDGE_PATH_MAX];
     // Reset visit states
     VISIT_STATES = NULL;
 
