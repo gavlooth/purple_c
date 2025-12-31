@@ -189,6 +189,7 @@ Value* parse(void) {
 
 // Deprecated recursion entry point (kept for header compat if needed, but parse() covers it)
 Value* parse_list(void) {
+    if (!parse_ptr) return NIL;
     if (*parse_ptr == '(') {
         parse_ptr++;
         return parse(); // parse now handles the loop
