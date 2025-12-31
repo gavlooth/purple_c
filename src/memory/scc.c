@@ -615,6 +615,7 @@ void gen_scc_runtime(void) {
     printf("                    w_node->on_stack = 0;\n");
     printf("                    w->scc_id = scc->id;\n");
     printf("                    if (scc->member_count >= scc->capacity) {\n");
+    printf("                        if (scc->capacity > INT_MAX / 2) { TARJAN_OOM = 1; free(pop_work_frame(&work_stack)); return; }\n");
     printf("                        scc->capacity *= 2;\n");
     printf("                        Obj** new_members = realloc(scc->members, scc->capacity * sizeof(Obj*));\n");
     printf("                        if (!new_members) { TARJAN_OOM = 1; free(pop_work_frame(&work_stack)); return; }\n");
