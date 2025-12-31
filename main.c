@@ -1341,6 +1341,7 @@ void gen_weak_ref_runtime() {
 
     printf("WeakRef* mk_weak_ref(void* target) {\n");
     printf("    WeakRef* w = malloc(sizeof(WeakRef));\n");
+    printf("    if (!w) return NULL;\n");
     printf("    w->target = target;\n");
     printf("    w->alive = 1;\n");
     printf("    return w;\n");
@@ -2306,6 +2307,7 @@ int main(int argc, char** argv) {
     printf("  // Check if stack-allocated (don't free stack objects)\n");
     printf("  if (is_stack_obj(x)) return;\n");
     printf("  FreeNode* n = malloc(sizeof(FreeNode));\n");
+    printf("  if (!n) { free(x); return; } // OOM fallback: free immediately\n");
     printf("  n->obj = x;\n");
     printf("  n->next = FREE_HEAD;\n");
     printf("  FREE_HEAD = n;\n");

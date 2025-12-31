@@ -40,3 +40,17 @@ Purple C is a **stage‑polymorphic evaluator**: the same evaluator interprets c
 - `src/memory/*`: memory engines (SCC, deferred, arena, concurrent).
 - `src/codegen/codegen.c`: runtime generation.
 
+
+## Revision
+Relax the "ASAP First a litle but keep the no stop the world"
+- Implement arena + weak edges in an ASAP-style compiler
+
+This proposal extends ASAP in a practical, conservative, and sound way by:
+
+- embracing bulk deallocation via arenas
+
+- allowing cycles without lifetime inference
+
+- preserving static determinism
+
+
