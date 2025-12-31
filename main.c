@@ -1821,6 +1821,16 @@ Value* h_let_default(Value* exp, Value* menv) {
         if (val->tag == T_CODE) any_code = 1;
 
         BindingInfo* info = malloc(sizeof(BindingInfo));
+        if (!info) {
+            fprintf(stderr, "Error: OOM in let binding\n");
+            // Free already-allocated bindings
+            while (bind_list) {
+                BindingInfo* next = bind_list->next;
+                free(bind_list);
+                bind_list = next;
+            }
+            return NIL;
+        }
         info->sym = sym;
         info->val = val;
         info->next = NULL;
