@@ -419,9 +419,15 @@ ReuseContext* mk_reuse_context() {
 }
 
 void record_alloc(ReuseContext* ctx, const char* var, int size, int line) {
+    if (!ctx) return;
     AllocSite* a = malloc(sizeof(AllocSite));
-    a->id = ctx->next_id++;
+    if (!a) return;
     a->var_name = strdup(var);
+    if (!a->var_name) {
+        free(a);
+        return;
+    }
+    a->id = ctx->next_id++;
     a->size = size;
     a->line_number = line;
     a->reuse_candidate = 1;
@@ -430,9 +436,15 @@ void record_alloc(ReuseContext* ctx, const char* var, int size, int line) {
 }
 
 void record_free(ReuseContext* ctx, const char* var, int size, int line) {
+    if (!ctx) return;
     FreeSite* f = malloc(sizeof(FreeSite));
-    f->id = ctx->next_id++;
+    if (!f) return;
     f->var_name = strdup(var);
+    if (!f->var_name) {
+        free(f);
+        return;
+    }
+    f->id = ctx->next_id++;
     f->size = size;
     f->line_number = line;
     f->matched_alloc_id = -1;
@@ -449,6 +461,7 @@ int used_between(ReuseContext* ctx, const char* var, int start, int end) {
 
 // Find reuse opportunities: free followed by alloc of same size
 ReusePair* find_reuse_pairs(ReuseContext* ctx) {
+    if (!ctx) return NULL;
     ReusePair* pairs = NULL;
 
     FreeSite* f = ctx->frees;
@@ -469,9 +482,18 @@ ReusePair* find_reuse_pairs(ReuseContext* ctx) {
                 if (!used_between(ctx, f->var_name, f->line_number, a->line_number)) {
                     // Found a match!
                     ReusePair* p = malloc(sizeof(ReusePair));
+                    if (!p) {
+                        a = a->next;
+                        continue;  // Skip on OOM
+                    }
+                    p->reuse_var = strdup(f->var_name);
+                    if (!p->reuse_var) {
+                        free(p);
+                        a = a->next;
+                        continue;  // Skip on OOM
+                    }
                     p->free_site = f;
                     p->alloc_site = a;
-                    p->reuse_var = strdup(f->var_name);
                     p->next = pairs;
                     pairs = p;
 
