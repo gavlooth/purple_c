@@ -404,7 +404,8 @@ Value* h_if_default(Value* exp, Value* menv) {
         DString* ds = ds_new();
         // Use a block expression that stores condition in temp variable
         // to avoid memory leak from evaluating the condition
-        ds_printf(ds, "({ Obj* _cond = %s; Obj* _r = _cond->i ? (%s) : (%s); dec_ref(_cond); _r; })",
+        // Check for NULL before dereferencing to handle OOM in condition
+        ds_printf(ds, "({ Obj* _cond = %s; Obj* _r = (_cond && _cond->i) ? (%s) : (%s); if (_cond) dec_ref(_cond); _r; })",
                   c->s, st ? st : "NULL", se ? se : "NULL");
         if (st_owned) free(st);
         if (se_owned) free(se);
