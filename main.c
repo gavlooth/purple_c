@@ -830,30 +830,37 @@ Value* SYM_SET_META;
 
 Value* alloc_val(Tag tag) {
     Value* v = malloc(sizeof(Value));
+    if (!v) return NULL;
     v->tag = tag;
     return v;
 }
 
 Value* mk_int(long i) {
     Value* v = alloc_val(T_INT);
+    if (!v) return NULL;
     v->i = i;
     return v;
 }
 
 Value* mk_sym(const char* s) {
     Value* v = alloc_val(T_SYM);
+    if (!v) return NULL;
     v->s = strdup(s);
+    if (!v->s) { free(v); return NULL; }
     return v;
 }
 
 Value* mk_code(const char* s) {
     Value* v = alloc_val(T_CODE);
+    if (!v) return NULL;
     v->s = strdup(s);
+    if (!v->s) { free(v); return NULL; }
     return v;
 }
 
 Value* mk_cons(Value* car, Value* cdr) {
     Value* v = alloc_val(T_CELL);
+    if (!v) return NULL;
     v->cell.car = car;
     v->cell.cdr = cdr;
     return v;
@@ -861,12 +868,14 @@ Value* mk_cons(Value* car, Value* cdr) {
 
 Value* mk_prim(PrimFn fn) {
     Value* v = alloc_val(T_PRIM);
+    if (!v) return NULL;
     v->prim = fn;
     return v;
 }
 
 Value* mk_lambda(Value* params, Value* body, Value* env) {
     Value* v = alloc_val(T_LAMBDA);
+    if (!v) return NULL;
     v->lam.params = params;
     v->lam.body = body;
     v->lam.env = env;
