@@ -3,6 +3,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <stdarg.h>
+#include <errno.h>
 
 /* 
  * ============================================================================ 
@@ -1981,7 +1982,15 @@ Value* parse() {
     if (*parse_ptr == '(') { parse_ptr++; return parse_list(); }
     if (*parse_ptr == '\'') { parse_ptr++; Value* v = parse(); return mk_cons(SYM_QUOTE, mk_cons(v, NIL)); }
     if (isdigit(*parse_ptr) || (*parse_ptr == '-' && isdigit(parse_ptr[1]))) {
-        long i = strtol(parse_ptr, (char**)&parse_ptr, 10);
+        errno = 0;
+        char* endptr;
+        long i = strtol(parse_ptr, &endptr, 10);
+        if (errno == ERANGE) {
+            fprintf(stderr, "Parse error: integer overflow\n");
+            parse_ptr = endptr;
+            return NIL;
+        }
+        parse_ptr = endptr;
         return mk_int(i);
     }
     const char* start = parse_ptr;
