@@ -300,7 +300,9 @@ void analyze_shapes_expr(Value* expr, ShapeContext* ctx) {
                         Value* val_expr = car(cdr(bind));
 
                         analyze_shapes_expr(val_expr, ctx);
-                        add_shape(ctx, sym->s, ctx->result_shape);
+                        if (sym && sym->tag == T_SYM) {
+                            add_shape(ctx, sym->s, ctx->result_shape);
+                        }
 
                         bindings = cdr(bindings);
                     }
