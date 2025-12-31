@@ -681,7 +681,9 @@ int in_live_set(char** set, int count, const char* var) {
 // Add var to live set
 void add_to_live_set(char*** set, int* count, const char* var) {
     if (in_live_set(*set, *count, var)) return;
-    (*set)[(*count)++] = strdup(var);
+    char* dup = strdup(var);
+    if (!dup) return;  // Skip on OOM
+    (*set)[(*count)++] = dup;
 }
 
 // Get variables used in an expression
