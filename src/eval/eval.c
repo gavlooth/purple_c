@@ -402,7 +402,10 @@ Value* h_if_default(Value* exp, Value* menv) {
         char* st = (t && t->tag == T_CODE) ? t->s : val_to_str(t);
         char* se = (e && e->tag == T_CODE) ? e->s : val_to_str(e);
         DString* ds = ds_new();
-        ds_printf(ds, "((%s)->i ? (%s) : (%s))", c->s, st ? st : "NULL", se ? se : "NULL");
+        // Use a block expression that stores condition in temp variable
+        // to avoid memory leak from evaluating the condition
+        ds_printf(ds, "({ Obj* _cond = %s; Obj* _r = _cond->i ? (%s) : (%s); dec_ref(_cond); _r; })",
+                  c->s, st ? st : "NULL", se ? se : "NULL");
         if (st_owned) free(st);
         if (se_owned) free(se);
         char* code_str = ds_take(ds);
