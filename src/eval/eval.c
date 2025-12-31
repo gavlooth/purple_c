@@ -174,6 +174,10 @@ Value* h_let_default(Value* exp, Value* menv) {
     while (!is_nil(check_bindings)) {
         Value* bind = car(check_bindings);
         Value* sym = car(bind);
+        if (!sym || sym->tag != T_SYM || !sym->s) {
+            check_bindings = cdr(check_bindings);
+            continue;  // Skip malformed binding
+        }
         Value* val_expr = car(cdr(bind));
         Value* val = eval(val_expr, menv);
         if (!val) val = NIL;  // Guard against NULL from allocation failure
