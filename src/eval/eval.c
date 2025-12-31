@@ -492,6 +492,7 @@ Value* eval(Value* expr, Value* menv) {
                         Value* next = eval(car(remaining), menv);
                         char* sr = result->s;
                         char* sn = is_code(next) ? next->s : val_to_str(next);
+                        if (!sn) sn = strdup("NULL");
                         DString* ds = ds_new();
                         ds_printf(ds, "(%s && %s)", sr, sn);
                         if (!is_code(next)) free(sn);
@@ -520,6 +521,7 @@ Value* eval(Value* expr, Value* menv) {
                         Value* next = eval(car(remaining), menv);
                         char* sr = result->s;
                         char* sn = is_code(next) ? next->s : val_to_str(next);
+                        if (!sn) sn = strdup("NULL");
                         DString* ds = ds_new();
                         ds_printf(ds, "(%s || %s)", sr, sn);
                         if (!is_code(next)) free(sn);
