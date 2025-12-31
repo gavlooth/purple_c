@@ -269,7 +269,13 @@ void analyze_back_edges(void) {
     const char** path = malloc(path_cap * sizeof(char*));
     if (!path) return;
 
-    VISIT_STATES = NULL;
+    // Free any existing visit states before resetting
+    while (VISIT_STATES) {
+        VisitState* next = VISIT_STATES->next;
+        free(VISIT_STATES->type_name);
+        free(VISIT_STATES);
+        VISIT_STATES = next;
+    }
 
     TypeDef* t = TYPE_REGISTRY;
     while (t) {
