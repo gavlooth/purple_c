@@ -91,7 +91,7 @@ void analyze_expr(Value* expr, AnalysisContext* ctx) {
             Value* op = car(expr);
             Value* args = cdr(expr);
 
-            if (op->tag == T_SYM) {
+            if (op && op->tag == T_SYM) {
                 if (strcmp(op->s, "quote") == 0) {
                     // Don't analyze quoted expressions
                 } else if (strcmp(op->s, "lambda") == 0) {
@@ -146,7 +146,7 @@ void analyze_escape(Value* expr, AnalysisContext* ctx, EscapeClass context) {
             Value* op = car(expr);
             Value* args = cdr(expr);
 
-            if (op->tag == T_SYM) {
+            if (op && op->tag == T_SYM) {
                 if (strcmp(op->s, "lambda") == 0) {
                     int saved = ctx->in_lambda;
                     ctx->in_lambda = 1;
@@ -275,7 +275,7 @@ void find_free_vars(Value* expr, Value* bound, char*** free_vars, int* count) {
         Value* op = car(expr);
         Value* args = cdr(expr);
 
-        if (op->tag == T_SYM) {
+        if (op && op->tag == T_SYM) {
             if (strcmp(op->s, "quote") == 0) {
                 return;
             }
