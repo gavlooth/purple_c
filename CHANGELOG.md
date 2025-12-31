@@ -4,6 +4,49 @@ All notable changes to Purple C Scratch are documented in this file.
 
 ## [Unreleased]
 
+## [0.5.0] - 2025-12-31
+
+### Added
+- **Region References** (`src/memory/region.c`)
+  - Vale/Ada/SPARK-style scope hierarchy validation
+  - Key invariant: pointer cannot point to more deeply scoped region
+  - Prevents cross-scope dangling references at link time
+  - O(1) depth check on reference creation
+  - API: `region_context_new()`, `region_enter()`, `region_exit()`,
+         `region_alloc()`, `region_create_ref()`, `region_can_reference()`
+
+- **Random Generational References** (`src/memory/genref.c`)
+  - Vale-style use-after-free detection
+  - Each object has random 64-bit generation number
+  - Each reference remembers generation at creation time
+  - On deref: if gen mismatch → UAF detected (O(1) check)
+  - On free: gen = 0 (invalidates all existing references)
+  - Closure capture validation before execution
+  - API: `genref_alloc()`, `genref_create_ref()`, `genref_deref()`,
+         `genref_is_valid()`, `genref_closure_*`
+
+- **Constraint References** (`src/memory/constraint.c`)
+  - Assertion-based safety for complex patterns (graphs, observers, callbacks)
+  - Single owner + multiple non-owning "constraint" references
+  - On free: ASSERT constraint count is zero (with `CONSTRAINT_ASSERT` define)
+  - Catches dangling references at development time
+  - API: `constraint_alloc()`, `constraint_add()`, `constraint_release()`,
+         `constraint_free()`, `constraint_get_stats()`
+
+- **Tiered Safety Strategy**
+  - Simple (90%): Pure ASAP + ad-hoc validation (zero cost)
+  - Cross-scope (7%): Region refs (+8 bytes, O(1) check)
+  - Closures/callbacks (3%): Random gen refs (+16 bytes, 1 cmp)
+  - Debug mode: + Constraint refs (assert on free)
+
+### Changed
+- Updated Makefile to include `region.c`, `genref.c`, `constraint.c`
+
+### References
+- Vale Grimoire: https://verdagon.dev/grimoire/grimoire
+- Random Generational References: https://verdagon.dev/blog/generational-references
+- Ada/SPARK scope rules for pointer safety
+
 ## [0.4.0] - 2025-12-31
 
 ### Added

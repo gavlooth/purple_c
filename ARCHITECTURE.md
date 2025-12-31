@@ -99,6 +99,70 @@ Lobster-style compile-time RC elimination (~75% ops removed):
 | Aliasing | Multiple vars, same object | Only one RC |
 | Borrowing | Parameters, temps | Zero RC ops |
 
+## Tiered Safety Strategies (v0.5.0)
+
+Beyond memory management, the compiler provides **tiered safety strategies** to catch different error patterns with appropriate overhead:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    DETECTION PHASE                               │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+    ┌─────────────────────────┼─────────────────────────┐
+    ▼                         ▼                         ▼
+ SIMPLE                   MODERATE                  COMPLEX
+ (Tree/DAG)              (Cross-scope)             (Closures/Graphs)
+    │                         │                         │
+    ▼                         ▼                         ▼
+ Pure ASAP               Region refs              Random Gen refs
+ (zero cost)             (+8 bytes, O(1))         (+16 bytes, 1 cmp)
+                                                        │
+                                                        ▼
+                                                  Constraint refs
+                                                  (debug: assert)
+```
+
+### Region References (`src/memory/region.c`)
+
+Vale/Ada/SPARK-style scope hierarchy validation:
+- **Invariant**: Pointer cannot point to more deeply scoped region
+- **Check**: O(1) depth comparison at link time
+- **Overhead**: +8 bytes per object (region ID)
+- **Catches**: Cross-scope dangling references
+
+### Random Generational References (`src/memory/genref.c`)
+
+Vale-style use-after-free detection:
+- **Mechanism**: Each object has random 64-bit generation
+- **Check**: O(1) comparison at dereference
+- **Overhead**: +16 bytes (8 per object, 8 per pointer)
+- **On free**: Generation = 0 (invalidates all refs)
+- **Catches**: Stale closure captures, callbacks
+
+### Constraint References (`src/memory/constraint.c`)
+
+Assertion-based safety for complex ownership (DEBUG mode):
+- **Mechanism**: Owner + non-owning "constraint" refs
+- **Check**: Assert count=0 at free time
+- **Overhead**: +8 bytes (constraint count)
+- **Catches**: Observer pattern bugs, callback leaks
+- Enable assertions: `#define CONSTRAINT_ASSERT`
+
+### Strategy Selection by Pattern
+
+| Detection | Problem | Strategy | Overhead |
+|-----------|---------|----------|----------|
+| Cross-scope link | Dangling ptr | Region refs | O(1) check |
+| Closure capture | UAF | Gen refs | 1 cmp/deref |
+| Observer pattern | Complex ownership | Constraint | Assert |
+| Unknown shape | Conservative | Symmetric RC | Scope tracking |
+
+### References
+
+- Vale Grimoire: https://verdagon.dev/grimoire/grimoire
+- Random Generational References: https://verdagon.dev/blog/generational-references
+- Ada/SPARK accessibility rules
+
 ## Three-Phase Automatic Back-Edge Detection
 
 The compiler automatically detects back-edges in cyclic data structures to break ownership cycles. No programmer annotation required.

@@ -26,6 +26,9 @@ SRCS = $(SRC_DIR)/main.c \
        $(MEMORY_DIR)/deferred.c \
        $(MEMORY_DIR)/arena.c \
        $(MEMORY_DIR)/symmetric.c \
+       $(MEMORY_DIR)/region.c \
+       $(MEMORY_DIR)/genref.c \
+       $(MEMORY_DIR)/constraint.c \
        $(MEMORY_DIR)/exception.c \
        $(MEMORY_DIR)/concurrent.c \
        $(CODEGEN_DIR)/codegen.c \
