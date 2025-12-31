@@ -171,6 +171,7 @@ Value* h_let_default(Value* exp, Value* menv) {
         Value* sym = car(bind);
         Value* val_expr = car(cdr(bind));
         Value* val = eval(val_expr, menv);
+        if (!val) val = NIL;  // Guard against NULL from allocation failure
 
         if (val->tag == T_CODE) any_code = 1;
 
