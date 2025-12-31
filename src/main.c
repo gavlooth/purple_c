@@ -198,6 +198,7 @@ int main(int argc, char** argv) {
         input_allocated = 1;
     }
 
+    int emitted_result = 0;  // Track if we declared 'result' variable
     if (input_str && strlen(input_str) > 0) {
         set_parse_input(input_str);
         Value* expr = parse();
@@ -212,6 +213,7 @@ int main(int argc, char** argv) {
                 free(escaped);
                 printf("  Obj* result = %s;\n", str);
                 printf("  if (result) printf(\"Result: %%ld\\n\", result->i);\n");
+                emitted_result = 1;
             } else if (result && result->tag == T_INT) {
                 // Interpreted result - output as comment
                 printf("  // Result: %ld\n", result->i);
@@ -236,12 +238,13 @@ int main(int argc, char** argv) {
             printf("  Obj* result = %s;\n", str);
             printf("  if (result) printf(\"Result: %%ld\\n\", result->i);\n");
             free(str);
+            emitted_result = 1;
         }
     }
-    
+
     if (input_allocated) free(input_str);
 
-    printf("  if (result) dec_ref(result);\n");
+    if (emitted_result) printf("  if (result) dec_ref(result);\n");
     printf("  flush_freelist();\n");
     printf("  flush_all_deferred();\n");
     printf("  cleanup_all_weak_refs();\n");
