@@ -21,9 +21,11 @@ SRCS = $(SRC_DIR)/main.c \
        $(ANALYSIS_DIR)/escape.c \
        $(ANALYSIS_DIR)/shape.c \
        $(ANALYSIS_DIR)/dps.c \
+       $(ANALYSIS_DIR)/rcopt.c \
        $(MEMORY_DIR)/scc.c \
        $(MEMORY_DIR)/deferred.c \
        $(MEMORY_DIR)/arena.c \
+       $(MEMORY_DIR)/symmetric.c \
        $(MEMORY_DIR)/exception.c \
        $(MEMORY_DIR)/concurrent.c \
        $(CODEGEN_DIR)/codegen.c \
@@ -65,7 +67,20 @@ clean:
 # Run test suite
 test: all
 	./tests.sh
-	./tests_break.sh
+
+# Unit test sources (subset needed for each test)
+UTIL_OBJS = $(UTIL_DIR)/dstring.o $(UTIL_DIR)/hashmap.o
+TYPE_OBJS = $(SRC_DIR)/types.o
+ANALYSIS_OBJS = $(ANALYSIS_DIR)/escape.o $(ANALYSIS_DIR)/shape.o $(ANALYSIS_DIR)/rcopt.o
+
+# Run unit tests
+unit-test: $(UTIL_OBJS) $(TYPE_OBJS) $(ANALYSIS_OBJS)
+	@echo "Building and running unit tests..."
+	$(CC) $(CFLAGS) -o tests/test_rcopt tests/unit_rcopt.c \
+		$(ANALYSIS_DIR)/rcopt.o $(ANALYSIS_DIR)/shape.o \
+		$(TYPE_OBJS) $(UTIL_OBJS)
+	./tests/test_rcopt
+	@rm -f tests/test_rcopt
 
 # Generate and compile output
 compile-output: all
