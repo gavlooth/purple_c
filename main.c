@@ -1964,6 +1964,7 @@ Value* h_if_default(Value* exp, Value* menv) {
 
 Value* mk_menv(Value* parent, Value* env) {
     Value* v = alloc_val(T_MENV);
+    if (!v) return NULL;
     v->menv.env = env;
     v->menv.parent = parent;
     // Default handlers

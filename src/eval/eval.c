@@ -74,6 +74,7 @@ Value* menv_parent(Value* menv) {
 
 Value* mk_menv(Value* parent, Value* env) {
     Value* v = alloc_val(T_MENV);
+    if (!v) return NULL;
     v->menv.env = env;
     v->menv.parent = parent;
     v->menv.h_app = h_app_default;
