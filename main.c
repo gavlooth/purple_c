@@ -935,19 +935,19 @@ char* val_to_str(Value* v) {
 // -- Code Generation Helpers (ASAP) --
 
 Value* emit_c_call(const char* fn, Value* a, Value* b) {
-    char buf[1024];
     char* sa = (a->tag == T_CODE) ? a->s : val_to_str(a);
     char* sb = (b->tag == T_CODE) ? b->s : val_to_str(b);
-    
-    char ca[512], cb[512];
-    if (a->tag == T_INT) sprintf(ca, "mk_int(%ld)", a->i);
-    else strcpy(ca, sa);
-    
-    if (b->tag == T_INT) sprintf(cb, "mk_int(%ld)", b->i);
-    else strcpy(cb, sb);
 
-    sprintf(buf, "%s(%s, %s)", fn, ca, cb);
-    
+    char ca[512], cb[512];
+    if (a->tag == T_INT) snprintf(ca, sizeof(ca), "mk_int(%ld)", a->i);
+    else snprintf(ca, sizeof(ca), "%s", sa);
+
+    if (b->tag == T_INT) snprintf(cb, sizeof(cb), "mk_int(%ld)", b->i);
+    else snprintf(cb, sizeof(cb), "%s", sb);
+
+    char buf[1280];
+    snprintf(buf, sizeof(buf), "%s(%s, %s)", fn, ca, cb);
+
     if (a->tag != T_CODE) free(sa);
     if (b->tag != T_CODE) free(sb);
     return mk_code(buf);
