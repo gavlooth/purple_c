@@ -29,7 +29,7 @@ void free_analysis_ctx(AnalysisContext* ctx) {
 }
 
 VarUsage* find_var(AnalysisContext* ctx, const char* name) {
-    if (!ctx) return NULL;
+    if (!ctx || !name) return NULL;
     VarUsage* v = ctx->vars;
     while (v) {
         if (strcmp(v->name, name) == 0) return v;
