@@ -647,10 +647,8 @@ void gen_scc_runtime(void) {
     printf("    \n");
     printf("    SCC* sccs = NULL;\n");
     printf("    tarjan_strongconnect(root, &sccs);\n");
-    printf("    // Clean up Tarjan state on OOM to prevent memory leak\n");
-    printf("    if (TARJAN_OOM) {\n");
-    printf("        reset_tarjan_state();\n");
-    printf("    }\n");
+    printf("    // Always clean up Tarjan state to prevent memory leak\n");
+    printf("    reset_tarjan_state();\n");
     printf("    return sccs;\n");
     printf("}\n\n");
 
