@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <time.h>
+#include <limits.h>
 
 /* Platform-specific random */
 #ifdef _WIN32
@@ -19,7 +20,16 @@
 
 /* Helper: grow array */
 static void* grow_array(void* arr, int* capacity, size_t elem_size) {
-    int new_cap = (*capacity == 0) ? 8 : (*capacity * 2);
+    int new_cap;
+    if (*capacity == 0) {
+        new_cap = 8;
+    } else {
+        /* Check for integer overflow before doubling */
+        if (*capacity > INT_MAX / 2) {
+            return NULL;  /* Cannot grow - would overflow */
+        }
+        new_cap = *capacity * 2;
+    }
     void* new_arr = realloc(arr, new_cap * elem_size);
     if (new_arr) {
         *capacity = new_cap;
