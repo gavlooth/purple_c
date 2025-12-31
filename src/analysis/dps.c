@@ -90,6 +90,7 @@ void gen_dps_runtime(void) {
     printf("    dest->ptr->mark = 1;\n");
     printf("    dest->ptr->scc_id = -1;\n");
     printf("    dest->ptr->is_pair = 0;\n");
+    printf("    dest->ptr->scan_tag = 0;\n");
     printf("    dest->ptr->i = value;\n");
     printf("    return dest->ptr;\n");
     printf("}\n\n");
@@ -101,6 +102,7 @@ void gen_dps_runtime(void) {
     printf("    dest->ptr->mark = 1;\n");
     printf("    dest->ptr->scc_id = -1;\n");
     printf("    dest->ptr->is_pair = 1;\n");
+    printf("    dest->ptr->scan_tag = 0;\n");
     printf("    dest->ptr->a = a;\n");
     printf("    dest->ptr->b = b;\n");
     printf("    return dest->ptr;\n");
