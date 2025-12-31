@@ -534,7 +534,10 @@ void gen_scc_runtime(void) {
     printf("    while (work_stack) {\n");
     printf("        TarjanWorkFrame* frame = work_stack;\n");
     printf("        Obj* v = frame->v;\n\n");
-    printf("        if (TARJAN_OOM) return;\n\n");
+    printf("        if (TARJAN_OOM) {\n");
+    printf("            while (work_stack) { free(pop_work_frame(&work_stack)); }\n");
+    printf("            return;\n");
+    printf("        }\n\n");
 
     printf("        switch (frame->state) {\n");
     printf("        case TARJAN_INIT: {\n");
