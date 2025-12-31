@@ -150,6 +150,7 @@ Shape shape_join(Shape a, Shape b) {
 
 ShapeContext* mk_shape_context() {
     ShapeContext* ctx = malloc(sizeof(ShapeContext));
+    if (!ctx) return NULL;
     ctx->shapes = NULL;
     ctx->changed = 0;
     ctx->next_alias_group = 1;
@@ -179,7 +180,12 @@ void add_shape(ShapeContext* ctx, const char* name, Shape shape) {
         return;
     }
     ShapeInfo* s = malloc(sizeof(ShapeInfo));
+    if (!s) return;
     s->var_name = strdup(name);
+    if (!s->var_name) {
+        free(s);
+        return;
+    }
     s->shape = shape;
     s->confidence = 100;
     s->alias_group = ctx->next_alias_group++;
