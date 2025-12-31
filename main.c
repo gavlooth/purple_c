@@ -971,12 +971,15 @@ Value* car(Value* v) { return (v && v->tag == T_CELL) ? v->cell.car : NIL; }
 Value* cdr(Value* v) { return (v && v->tag == T_CELL) ? v->cell.cdr : NIL; }
 
 int sym_eq(Value* s1, Value* s2) {
+    if (!s1 || !s2) return 0;
     if (s1->tag != T_SYM || s2->tag != T_SYM) return 0;
+    if (!s1->s || !s2->s) return 0;
     return strcmp(s1->s, s2->s) == 0;
 }
 
 int sym_eq_str(Value* s1, const char* s2) {
-    if (s1->tag != T_SYM) return 0;
+    if (!s1 || s1->tag != T_SYM) return 0;
+    if (!s1->s || !s2) return 0;
     return strcmp(s1->s, s2) == 0;
 }
 
