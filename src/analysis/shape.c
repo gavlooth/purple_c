@@ -1,3 +1,4 @@
+#define _POSIX_C_SOURCE 200809L
 #include "shape.h"
 
 // Shape lattice: TREE < DAG < CYCLIC (join = max)

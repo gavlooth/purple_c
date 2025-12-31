@@ -1,3 +1,4 @@
+#define _POSIX_C_SOURCE 200809L
 // Phase 10: Exception Handling Implementation
 // LLVM-style landing pads with ASAP cleanup
 

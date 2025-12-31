@@ -1,3 +1,4 @@
+#define _POSIX_C_SOURCE 200809L
 #include "codegen.h"
 #include "../memory/scc.h"
 #include "../memory/deferred.h"
