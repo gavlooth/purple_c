@@ -41,7 +41,7 @@ void free_shape_context(ShapeContext* ctx) {
 }
 
 ShapeInfo* find_shape(ShapeContext* ctx, const char* name) {
-    if (!ctx) return NULL;
+    if (!ctx || !name) return NULL;
     ShapeInfo* s = ctx->shapes;
     while (s) {
         if (strcmp(s->var_name, name) == 0) return s;
@@ -51,7 +51,7 @@ ShapeInfo* find_shape(ShapeContext* ctx, const char* name) {
 }
 
 void add_shape(ShapeContext* ctx, const char* name, Shape shape) {
-    if (!ctx) return;
+    if (!ctx || !name) return;
     ShapeInfo* existing = find_shape(ctx, name);
     if (existing) {
         Shape joined = shape_join(existing->shape, shape);
