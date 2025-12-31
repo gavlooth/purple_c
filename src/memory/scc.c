@@ -85,6 +85,7 @@ void add_to_scc(SCC* scc, Obj* obj) {
 }
 
 SCC* find_scc(SCCRegistry* reg, int scc_id) {
+    if (!reg) return NULL;
     SCC* scc = reg->sccs;
     while (scc) {
         if (scc->id == scc_id) return scc;
