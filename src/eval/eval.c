@@ -137,6 +137,7 @@ Value* h_app_default(Value* exp, Value* menv) {
         }
 
         Value* body_menv = mk_menv(menv->menv.parent, new_env);
+        if (!body_menv) return NIL;
         body_menv->menv.h_app = menv->menv.h_app;
         body_menv->menv.h_let = menv->menv.h_let;
         body_menv->menv.h_if = menv->menv.h_if;
@@ -309,6 +310,18 @@ Value* h_let_default(Value* exp, Value* menv) {
         }
 
         Value* body_menv = mk_menv(menv->menv.parent, new_env);
+        if (!body_menv) {
+            ds_free(all_decls);
+            ds_free(all_frees);
+            free_analysis_ctx(ctx);
+            free_shape_context(shape_ctx);
+            while (bind_list) {
+                BindingInfo* next = bind_list->next;
+                free(bind_list);
+                bind_list = next;
+            }
+            return NIL;
+        }
         body_menv->menv.h_app = menv->menv.h_app;
         body_menv->menv.h_let = menv->menv.h_let;
 
@@ -345,6 +358,14 @@ Value* h_let_default(Value* exp, Value* menv) {
     }
 
     Value* body_menv = mk_menv(menv->menv.parent, new_env);
+    if (!body_menv) {
+        while (bind_list) {
+            BindingInfo* next = bind_list->next;
+            free(bind_list);
+            bind_list = next;
+        }
+        return NIL;
+    }
     body_menv->menv.h_app = menv->menv.h_app;
     body_menv->menv.h_let = menv->menv.h_let;
 
@@ -423,6 +444,7 @@ Value* eval(Value* expr, Value* menv) {
 
             // Create new menv for evaluating bindings
             Value* rec_menv = mk_menv(menv->menv.parent, new_env);
+            if (!rec_menv) return NIL;
             rec_menv->menv.h_app = menv->menv.h_app;
             rec_menv->menv.h_let = menv->menv.h_let;
             rec_menv->menv.h_if = menv->menv.h_if;
@@ -520,6 +542,7 @@ Value* eval(Value* expr, Value* menv) {
             Value* parent = menv->menv.parent;
             if (is_nil(parent)) {
                 parent = mk_menv(NIL, NIL);
+                if (!parent) return NIL;
                 menv->menv.parent = parent;
             }
             return eval(e, parent);
