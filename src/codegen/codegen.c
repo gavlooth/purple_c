@@ -229,9 +229,11 @@ static void detect_back_edges_dfs(const char* type_name, const char*** path, int
 
     // Ensure path capacity
     if (*path_len >= *path_cap) {
-        *path_cap *= 2;
-        *path = realloc(*path, (*path_cap) * sizeof(char*));
-        if (!*path) return; // Allocation failed
+        int new_cap = (*path_cap) * 2;
+        const char** tmp = realloc(*path, new_cap * sizeof(char*));
+        if (!tmp) return; // Allocation failed, keep original path intact
+        *path = tmp;
+        *path_cap = new_cap;
     }
 
     (*path)[*path_len] = type_name;
