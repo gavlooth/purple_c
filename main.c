@@ -781,7 +781,12 @@ FreePoint* find_free_points(CFG* cfg, const char* var) {
 
             if (dies_on_some_edge) {
                 FreePoint* fp = malloc(sizeof(FreePoint));
+                if (!fp) continue;  // Skip on OOM
                 fp->var_name = strdup(var);
+                if (!fp->var_name) {
+                    free(fp);
+                    continue;  // Skip on OOM
+                }
                 fp->node_id = node->id;
                 fp->is_conditional = !dies_on_all_edges;
                 fp->next = points;
