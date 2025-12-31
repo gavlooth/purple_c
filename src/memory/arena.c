@@ -95,8 +95,6 @@ void arena_release_externals(Arena* a) {
 
 // -- Scope Detection --
 
-static int next_scope_id = 1;
-
 ArenaScope* find_arena_scopes(Value* expr) {
     // Look for let bindings with cyclic shapes that don't escape
     // For now, return NULL - full implementation would analyze the AST
