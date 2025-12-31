@@ -409,6 +409,7 @@ typedef struct ReuseContext {
 
 ReuseContext* mk_reuse_context() {
     ReuseContext* ctx = malloc(sizeof(ReuseContext));
+    if (!ctx) return NULL;
     ctx->allocs = NULL;
     ctx->frees = NULL;
     ctx->pairs = NULL;
