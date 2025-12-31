@@ -87,6 +87,7 @@ Value* mk_menv(Value* parent, Value* env) {
 // -- Default Handlers --
 
 Value* h_lit_default(Value* exp, Value* menv) {
+    (void)menv;
     return exp;
 }
 
@@ -549,6 +550,7 @@ static int get_two_args(Value* args, Value** a, Value** b) {
 }
 
 Value* prim_add(Value* args, Value* menv) {
+    (void)menv;
     Value* a; Value* b;
     if (!get_two_args(args, &a, &b)) return NIL;
     if (is_code(a) || is_code(b)) return emit_c_call("add", a, b);
@@ -557,6 +559,7 @@ Value* prim_add(Value* args, Value* menv) {
 }
 
 Value* prim_sub(Value* args, Value* menv) {
+    (void)menv;
     Value* a; Value* b;
     if (!get_two_args(args, &a, &b)) return NIL;
     if (is_code(a) || is_code(b)) return emit_c_call("sub", a, b);
@@ -565,6 +568,7 @@ Value* prim_sub(Value* args, Value* menv) {
 }
 
 Value* prim_cons(Value* args, Value* menv) {
+    (void)menv;
     Value* a; Value* b;
     if (!get_two_args(args, &a, &b)) return NIL;
     if (is_code(a) || is_code(b)) return emit_c_call("mk_pair", a, b);

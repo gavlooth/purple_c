@@ -365,6 +365,7 @@ int is_frozen_after_construction(const char* var, Value* body) {
 }
 
 FreezePoint* detect_freeze_points(Value* expr) {
+    (void)expr;  // Not yet used - placeholder for future implementation
     // TODO: Implement more sophisticated freeze point detection
     // For now, we detect explicit (freeze x) forms
     return NULL;
