@@ -243,6 +243,7 @@ int main(int argc, char** argv) {
 
     printf("  flush_freelist();\n");
     printf("  flush_all_deferred();\n");
+    printf("  cleanup_all_weak_refs();\n");
     printf("  return 0;\n");
     printf("}\n");
 
