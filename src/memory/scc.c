@@ -211,6 +211,11 @@ void tarjan_dfs(SCCRegistry* reg, Obj* v, SCC** result) {
         switch (frame->state) {
         case TARJAN_INIT: {
             SCCNode* node = get_or_create_node(reg, curr);
+            if (!node) {
+                // Allocation failed - abort
+                free(pop_tarjan_frame(&work_stack));
+                break;
+            }
 
             // Skip if already processed
             if (node->id >= 0) {
