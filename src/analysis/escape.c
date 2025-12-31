@@ -234,9 +234,9 @@ void analyze_escape(Value* expr, AnalysisContext* ctx, EscapeClass context) {
 static int is_bound(Value* bound, Value* sym) {
     while (!is_nil(bound)) {
         Value* pair = car(bound);
-        if (pair->tag == T_CELL) {
+        if (pair && pair->tag == T_CELL) {
             Value* key = car(pair);
-            if (key->tag == T_SYM && sym->tag == T_SYM &&
+            if (key && key->tag == T_SYM && sym && sym->tag == T_SYM &&
                 strcmp(key->s, sym->s) == 0) {
                 return 1;
             }
