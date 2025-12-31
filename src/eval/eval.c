@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <limits.h>
+#include <ctype.h>
 
 // -- Symbol Table --
 
@@ -386,6 +387,19 @@ Value* h_let_default(Value* exp, Value* menv) {
     return eval(body, body_menv);
 }
 
+// Helper: Check if a code string is a simple variable name (identifier)
+// Simple names don't need dec_ref since they're managed by their enclosing scope
+static int is_simple_var_name(const char* s) {
+    if (!s || !*s) return 0;
+    // First char must be letter or underscore
+    if (!isalpha((unsigned char)s[0]) && s[0] != '_') return 0;
+    // Rest must be alphanumeric or underscore
+    for (const char* p = s + 1; *p; p++) {
+        if (!isalnum((unsigned char)*p) && *p != '_') return 0;
+    }
+    return 1;
+}
+
 Value* h_if_default(Value* exp, Value* menv) {
     Value* args = cdr(exp);
     Value* cond_expr = car(args);
@@ -405,8 +419,16 @@ Value* h_if_default(Value* exp, Value* menv) {
         // Use a block expression that stores condition in temp variable
         // to avoid memory leak from evaluating the condition
         // Check for NULL before dereferencing to handle OOM in condition
-        ds_printf(ds, "({ Obj* _cond = %s; Obj* _r = (_cond && _cond->i) ? (%s) : (%s); if (_cond) dec_ref(_cond); _r; })",
-                  c->s, st ? st : "NULL", se ? se : "NULL");
+        // Don't dec_ref if condition is a simple variable name - it's managed by its scope
+        if (is_simple_var_name(c->s)) {
+            // Simple variable reference - no dec_ref needed (scope manages it)
+            ds_printf(ds, "({ Obj* _cond = %s; Obj* _r = (_cond && _cond->i) ? (%s) : (%s); _r; })",
+                      c->s, st ? st : "NULL", se ? se : "NULL");
+        } else {
+            // Complex expression - may allocate, so dec_ref after use
+            ds_printf(ds, "({ Obj* _cond = %s; Obj* _r = (_cond && _cond->i) ? (%s) : (%s); if (_cond) dec_ref(_cond); _r; })",
+                      c->s, st ? st : "NULL", se ? se : "NULL");
+        }
         if (st_owned) free(st);
         if (se_owned) free(se);
         char* code_str = ds_take(ds);
