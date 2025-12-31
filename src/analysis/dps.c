@@ -78,6 +78,7 @@ void gen_dps_runtime(void) {
     printf("Dest heap_dest() {\n");
     printf("    Dest d;\n");
     printf("    d.ptr = malloc(sizeof(Obj));\n");
+    printf("    if (!d.ptr) { d.is_stack = 0; return d; }  // Return with NULL ptr on OOM\n");
     printf("    d.is_stack = 0;\n");
     printf("    return d;\n");
     printf("}\n\n");
@@ -85,6 +86,7 @@ void gen_dps_runtime(void) {
     // DPS-style integer constructor
     printf("// Write integer to destination\n");
     printf("Obj* write_int(Dest* dest, long value) {\n");
+    printf("    if (!dest || !dest->ptr) return NULL;\n");
     printf("    dest->ptr->mark = 1;\n");
     printf("    dest->ptr->scc_id = -1;\n");
     printf("    dest->ptr->is_pair = 0;\n");
@@ -95,6 +97,7 @@ void gen_dps_runtime(void) {
     // DPS-style pair constructor
     printf("// Write pair to destination\n");
     printf("Obj* write_pair(Dest* dest, Obj* a, Obj* b) {\n");
+    printf("    if (!dest || !dest->ptr) return NULL;\n");
     printf("    dest->ptr->mark = 1;\n");
     printf("    dest->ptr->scc_id = -1;\n");
     printf("    dest->ptr->is_pair = 1;\n");
