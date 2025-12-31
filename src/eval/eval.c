@@ -561,7 +561,10 @@ Value* eval(Value* expr, Value* menv) {
         if (sym_eq(op, SYM_SCAN)) {
             Value* type_sym = eval(car(args), menv);
             Value* val = eval(car(cdr(args)), menv);
+            if (!type_sym || type_sym->tag != T_SYM || !type_sym->s) return NIL;
+            if (!val) return NIL;
             char* sval = (val->tag == T_CODE) ? val->s : val_to_str(val);
+            if (!sval) return NIL;
             DString* ds = ds_new();
             ds_printf(ds, "scan_%s(%s); // ASAP Mark", type_sym->s, sval);
             if (val->tag != T_CODE) free(sval);
