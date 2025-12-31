@@ -76,14 +76,21 @@ UTIL_OBJS = $(UTIL_DIR)/dstring.o $(UTIL_DIR)/hashmap.o
 TYPE_OBJS = $(SRC_DIR)/types.o
 ANALYSIS_OBJS = $(ANALYSIS_DIR)/escape.o $(ANALYSIS_DIR)/shape.o $(ANALYSIS_DIR)/rcopt.o
 
+# Memory module objects
+MEMORY_OBJS = $(MEMORY_DIR)/symmetric.o
+
 # Run unit tests
-unit-test: $(UTIL_OBJS) $(TYPE_OBJS) $(ANALYSIS_OBJS)
+unit-test: $(UTIL_OBJS) $(TYPE_OBJS) $(ANALYSIS_OBJS) $(MEMORY_OBJS)
 	@echo "Building and running unit tests..."
 	$(CC) $(CFLAGS) -o tests/test_rcopt tests/unit_rcopt.c \
 		$(ANALYSIS_DIR)/rcopt.o $(ANALYSIS_DIR)/shape.o \
 		$(TYPE_OBJS) $(UTIL_OBJS)
 	./tests/test_rcopt
 	@rm -f tests/test_rcopt
+	$(CC) $(CFLAGS) -o tests/test_symmetric tests/unit_symmetric.c \
+		$(MEMORY_DIR)/symmetric.o $(UTIL_OBJS)
+	./tests/test_symmetric
+	@rm -f tests/test_symmetric
 
 # Generate and compile output
 compile-output: all

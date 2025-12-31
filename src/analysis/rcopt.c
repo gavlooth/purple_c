@@ -16,6 +16,7 @@
 #include "shape.h"
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>
 
 /* Create a new RC optimization context */
 RCOptContext* mk_rcopt_context(void) {
@@ -69,7 +70,14 @@ static void add_alias(RCOptInfo* info, const char* alias) {
     if (!info || !alias) return;
 
     if (info->alias_count >= info->alias_capacity) {
-        int new_cap = info->alias_capacity == 0 ? 4 : info->alias_capacity * 2;
+        int new_cap;
+        if (info->alias_capacity == 0) {
+            new_cap = 4;
+        } else if (info->alias_capacity > INT_MAX / 2) {
+            return;  /* Overflow protection */
+        } else {
+            new_cap = info->alias_capacity * 2;
+        }
         char** new_aliases = realloc(info->aliases, new_cap * sizeof(char*));
         if (!new_aliases) return;
         info->aliases = new_aliases;

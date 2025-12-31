@@ -10,6 +10,7 @@
 #define _POSIX_C_SOURCE 200809L
 #include "symmetric.h"
 #include <string.h>
+#include <limits.h>
 
 #define INITIAL_CAPACITY 8
 
@@ -36,7 +37,14 @@ void sym_obj_add_ref(SymObj* obj, SymObj* target) {
 
     /* Grow refs array if needed */
     if (obj->ref_count >= obj->ref_capacity) {
-        int new_cap = obj->ref_capacity == 0 ? INITIAL_CAPACITY : obj->ref_capacity * 2;
+        int new_cap;
+        if (obj->ref_capacity == 0) {
+            new_cap = INITIAL_CAPACITY;
+        } else if (obj->ref_capacity > INT_MAX / 2) {
+            return;  /* Overflow protection */
+        } else {
+            new_cap = obj->ref_capacity * 2;
+        }
         SymObj** new_refs = realloc(obj->refs, new_cap * sizeof(SymObj*));
         if (!new_refs) return;
         obj->refs = new_refs;
@@ -65,7 +73,14 @@ void sym_scope_own(SymScope* scope, SymObj* obj) {
 
     /* Grow owned array if needed */
     if (scope->owned_count >= scope->owned_capacity) {
-        int new_cap = scope->owned_capacity == 0 ? INITIAL_CAPACITY : scope->owned_capacity * 2;
+        int new_cap;
+        if (scope->owned_capacity == 0) {
+            new_cap = INITIAL_CAPACITY;
+        } else if (scope->owned_capacity > INT_MAX / 2) {
+            return;  /* Overflow protection */
+        } else {
+            new_cap = scope->owned_capacity * 2;
+        }
         SymObj** new_owned = realloc(scope->owned, new_cap * sizeof(SymObj*));
         if (!new_owned) return;
         scope->owned = new_owned;
@@ -203,6 +218,10 @@ SymScope* sym_enter_scope(SymContext* ctx) {
 
     /* Grow stack if needed */
     if (ctx->stack_size >= ctx->stack_capacity) {
+        if (ctx->stack_capacity > INT_MAX / 2) {
+            sym_scope_free(scope);
+            return NULL;  /* Overflow protection */
+        }
         int new_cap = ctx->stack_capacity * 2;
         SymScope** new_stack = realloc(ctx->scope_stack, new_cap * sizeof(SymScope*));
         if (!new_stack) {
