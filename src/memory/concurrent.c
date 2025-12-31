@@ -201,6 +201,7 @@ void gen_concurrent_runtime(void) {
     // Close channel
     printf("// Close channel\n");
     printf("void channel_close(MsgChannel* ch) {\n");
+    printf("    if (!ch) return;\n");
     printf("    atomic_store(&ch->closed, 1);\n");
     printf("    pthread_cond_broadcast(&ch->not_empty);\n");
     printf("    pthread_cond_broadcast(&ch->not_full);\n");
@@ -209,6 +210,7 @@ void gen_concurrent_runtime(void) {
     // Destroy channel
     printf("// Destroy channel\n");
     printf("void channel_destroy(MsgChannel* ch) {\n");
+    printf("    if (!ch) return;\n");
     printf("    pthread_mutex_destroy(&ch->mutex);\n");
     printf("    pthread_cond_destroy(&ch->not_empty);\n");
     printf("    pthread_cond_destroy(&ch->not_full);\n");
