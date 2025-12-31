@@ -241,6 +241,7 @@ int main(int argc, char** argv) {
     
     if (input_allocated) free(input_str);
 
+    printf("  if (result) dec_ref(result);\n");
     printf("  flush_freelist();\n");
     printf("  flush_all_deferred();\n");
     printf("  cleanup_all_weak_refs();\n");
