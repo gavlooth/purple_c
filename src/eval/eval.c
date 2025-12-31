@@ -5,6 +5,7 @@
 #include "../util/dstring.h"
 #include <stdio.h>
 #include <string.h>
+#include <limits.h>
 
 // -- Symbol Table --
 
@@ -653,7 +654,7 @@ Value* prim_div(Value* args, Value* menv) {
     if (!get_two_args(args, &a, &b)) return NIL;
     if (is_code(a) || is_code(b)) return emit_c_call("div_op", a, b);
     if (a->tag != T_INT || b->tag != T_INT) return NIL;
-    if (b->i == 0) return mk_int(0);
+    if (b->i == 0 || (a->i == LONG_MIN && b->i == -1)) return mk_int(0);
     return mk_int(a->i / b->i);
 }
 
@@ -663,7 +664,7 @@ Value* prim_mod(Value* args, Value* menv) {
     if (!get_two_args(args, &a, &b)) return NIL;
     if (is_code(a) || is_code(b)) return emit_c_call("mod_op", a, b);
     if (a->tag != T_INT || b->tag != T_INT) return NIL;
-    if (b->i == 0) return mk_int(0);
+    if (b->i == 0 || (a->i == LONG_MIN && b->i == -1)) return mk_int(0);
     return mk_int(a->i % b->i);
 }
 
