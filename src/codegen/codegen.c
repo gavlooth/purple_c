@@ -518,6 +518,7 @@ void gen_runtime_header(void) {
     // Constructors
     printf("Obj* mk_int(long i) {\n");
     printf("    Obj* x = malloc(sizeof(Obj));\n");
+    printf("    if (!x) return NULL;\n");
     printf("    x->mark = 1; x->scc_id = -1; x->is_pair = 0; x->scan_tag = 0;\n");
     printf("    x->i = i;\n");
     printf("    return x;\n");
@@ -525,6 +526,7 @@ void gen_runtime_header(void) {
 
     printf("Obj* mk_pair(Obj* a, Obj* b) {\n");
     printf("    Obj* x = malloc(sizeof(Obj));\n");
+    printf("    if (!x) return NULL;\n");
     printf("    x->mark = 1; x->scc_id = -1; x->is_pair = 1; x->scan_tag = 0;\n");
     printf("    x->a = a; x->b = b;\n");
     printf("    return x;\n");
