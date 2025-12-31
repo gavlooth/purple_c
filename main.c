@@ -858,7 +858,13 @@ void gen_perceus_runtime() {
     printf("// Try to reuse an object if it's unique (refcount == 1)\n");
     printf("Obj* try_reuse(Obj* old, size_t size) {\n");
     printf("    if (old && old->mark == 1) {\n");
-    printf("        // Unique reference - can reuse in place\n");
+    printf("        // Reusing: release children if this was a pair\n");
+    printf("        if (old->is_pair) {\n");
+    printf("            if (old->a) dec_ref(old->a);\n");
+    printf("            if (old->b) dec_ref(old->b);\n");
+    printf("            old->a = NULL;\n");
+    printf("            old->b = NULL;\n");
+    printf("        }\n");
     printf("        return old;\n");
     printf("    }\n");
     printf("    if (old) dec_ref(old);\n");
@@ -868,16 +874,24 @@ void gen_perceus_runtime() {
     printf("// Reuse-aware constructors\n");
     printf("Obj* reuse_as_int(Obj* old, long value) {\n");
     printf("    Obj* obj = try_reuse(old, sizeof(Obj));\n");
-    printf("    obj->i = value;\n");
+    printf("    if (!obj) return NULL;\n");
     printf("    obj->mark = 1;\n");
+    printf("    obj->scc_id = -1;\n");
+    printf("    obj->is_pair = 0;\n");
+    printf("    obj->scan_tag = 0;\n");
+    printf("    obj->i = value;\n");
     printf("    return obj;\n");
     printf("}\n\n");
 
     printf("Obj* reuse_as_pair(Obj* old, Obj* a, Obj* b) {\n");
     printf("    Obj* obj = try_reuse(old, sizeof(Obj));\n");
+    printf("    if (!obj) return NULL;\n");
+    printf("    obj->mark = 1;\n");
+    printf("    obj->scc_id = -1;\n");
+    printf("    obj->is_pair = 1;\n");
+    printf("    obj->scan_tag = 0;\n");
     printf("    obj->a = a;\n");
     printf("    obj->b = b;\n");
-    printf("    obj->mark = 1;\n");
     printf("    return obj;\n");
     printf("}\n\n");
 
