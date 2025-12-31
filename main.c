@@ -1042,10 +1042,10 @@ Value* emit_c_call(const char* fn, Value* a, Value* b) {
 
     char ca[512], cb[512];
     if (a->tag == T_INT) snprintf(ca, sizeof(ca), "mk_int(%ld)", a->i);
-    else snprintf(ca, sizeof(ca), "%s", sa);
+    else snprintf(ca, sizeof(ca), "%s", sa ? sa : "NULL");
 
     if (b->tag == T_INT) snprintf(cb, sizeof(cb), "mk_int(%ld)", b->i);
-    else snprintf(cb, sizeof(cb), "%s", sb);
+    else snprintf(cb, sizeof(cb), "%s", sb ? sb : "NULL");
 
     char buf[1280];
     snprintf(buf, sizeof(buf), "%s(%s, %s)", fn, ca, cb);
