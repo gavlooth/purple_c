@@ -414,6 +414,7 @@ void gen_perceus_runtime(void) {
 
     printf("Obj* reuse_as_int(Obj* old, long value) {\n");
     printf("    Obj* obj = try_reuse(old, sizeof(Obj));\n");
+    printf("    if (!obj) return NULL;\n");
     printf("    obj->mark = 1;\n");
     printf("    obj->scc_id = -1;\n");
     printf("    obj->is_pair = 0;\n");
@@ -424,6 +425,7 @@ void gen_perceus_runtime(void) {
 
     printf("Obj* reuse_as_pair(Obj* old, Obj* a, Obj* b) {\n");
     printf("    Obj* obj = try_reuse(old, sizeof(Obj));\n");
+    printf("    if (!obj) return NULL;\n");
     printf("    obj->mark = 1;\n");
     printf("    obj->scc_id = -1;\n");
     printf("    obj->is_pair = 1;\n");
