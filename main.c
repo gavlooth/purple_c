@@ -2268,6 +2268,10 @@ int main(int argc, char** argv) {
         Value* expr = parse();
         if (!expr) break;
         Value* result = eval(expr, menv);
+        if (!result) {
+            printf("  // Error: eval returned NULL\n");
+            continue;
+        }
         if (result->tag == T_CODE)
             printf("  %s;\n", result->s);
         else
