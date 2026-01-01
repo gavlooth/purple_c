@@ -4,13 +4,26 @@
 
 This plan brings the C implementation to feature parity with the Go version (`purple_go`).
 
-**Current C Status:**
-- ✅ Sophisticated memory management (ASAP, SCC, deferred RC, arena, etc.)
-- ✅ Stage-polymorphic evaluator
-- ✅ 9-handler tower
-- ❌ Missing: Mutable state, full continuations, CSP, deftype language form, I/O
+**Both versions have the same memory infrastructure:**
+- ✅ ASAP (compile-time free insertion)
+- ✅ SCC-based RC (Tarjan's algorithm for frozen cycles)
+- ✅ Deferred RC (bounded O(k) for mutable cycles)
+- ✅ Arena allocation
+- ✅ Symmetric RC
+- ✅ GenRef/Region/Constraint refs
+- ✅ Shape analysis (TREE/DAG/CYCLIC)
+- ✅ Escape analysis
+- ✅ RC optimization (~95% ops eliminated)
+- ✅ TypeRegistry with back-edge detection
 
-**Goal:** Replicate all Go implementation features while preserving C's memory optimizations.
+**C is missing LANGUAGE FEATURES that Go now has:**
+- ✅ Mutable state (`box`, `set!`, `define`) - IMPLEMENTED
+- ✅ I/O primitives (`display`, `newline`, `read`, `print`) - IMPLEMENTED
+- ❌ Full continuations (`call/cc`, `prompt`/`control`)
+- ❌ CSP concurrency (`go`, `make-chan`, `chan-send!`, `chan-recv!`, `select`) - Types defined, blocking ops TBD
+- ❌ deftype language form (infrastructure exists, not wired to eval)
+
+**Goal:** Add language features to C, then wire them to existing memory infrastructure.
 
 ---
 

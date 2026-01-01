@@ -25,8 +25,8 @@ typedef struct ThreadRegion {
     struct ThreadRegion* next;
 } ThreadRegion;
 
-// Channel for ownership transfer
-typedef struct Channel {
+// ConcurrentChannel for ownership transfer (renamed to avoid conflict with CSP Channel)
+typedef struct ConcurrentChannel {
     int id;
     void** buffer;          // Message buffer
     int capacity;
@@ -34,7 +34,7 @@ typedef struct Channel {
     int tail;
     int closed;
     // Synchronization primitives (pthread in runtime)
-} Channel;
+} ConcurrentChannel;
 
 // Message with ownership metadata
 typedef struct Message {

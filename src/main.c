@@ -108,6 +108,33 @@ int main(int argc, char** argv) {
     // Other
     env = env_extend(env, mk_sym("run"), mk_prim(prim_run));
 
+    // Box operations (mutable reference cells)
+    env = env_extend(env, mk_sym("box"), mk_prim(prim_box));
+    env = env_extend(env, mk_sym("unbox"), mk_prim(prim_unbox));
+    env = env_extend(env, mk_sym("set-box!"), mk_prim(prim_set_box));
+    env = env_extend(env, mk_sym("box?"), mk_prim(prim_is_box));
+
+    // I/O operations
+    env = env_extend(env, mk_sym("display"), mk_prim(prim_display));
+    env = env_extend(env, mk_sym("newline"), mk_prim(prim_newline));
+    env = env_extend(env, mk_sym("print"), mk_prim(prim_print));
+    env = env_extend(env, mk_sym("read"), mk_prim(prim_read));
+
+    // Type predicates
+    env = env_extend(env, mk_sym("continuation?"), mk_prim(prim_is_cont));
+    env = env_extend(env, mk_sym("error?"), mk_prim(prim_is_error));
+    env = env_extend(env, mk_sym("chan?"), mk_prim(prim_is_chan));
+    env = env_extend(env, mk_sym("process?"), mk_prim(prim_is_process));
+
+    // Channel operations (CSP)
+    env = env_extend(env, mk_sym("make-chan"), mk_prim(prim_make_chan));
+    env = env_extend(env, mk_sym("chan-send!"), mk_prim(prim_chan_send));
+    env = env_extend(env, mk_sym("chan-recv!"), mk_prim(prim_chan_recv));
+    env = env_extend(env, mk_sym("chan-close!"), mk_prim(prim_chan_close));
+
+    // Register deftype primitives for user-defined types (A5)
+    register_deftype_primitives(env);
+
     // Initial Meta-Environment (Level 0)
     Value* menv = mk_menv(NIL, env);
 

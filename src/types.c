@@ -175,6 +175,123 @@ Value* mk_lambda(Value* params, Value* body, Value* env) {
     return v;
 }
 
+Value* mk_error(const char* msg) {
+    if (!msg) msg = "unknown error";
+    Value* v = alloc_val(T_ERROR);
+    if (!v) return NULL;
+    v->s = strdup(msg);
+    if (!v->s) {
+        if (!compiler_arena_current) free(v);
+        return NULL;
+    }
+    if (compiler_arena_current) {
+        compiler_arena_register_string(v->s);
+    }
+    return v;
+}
+
+Value* mk_box(Value* initial) {
+    Value* v = alloc_val(T_BOX);
+    if (!v) return NULL;
+    v->box_value = initial;
+    return v;
+}
+
+Value* mk_cont(ContFn fn, Value* menv, int tag) {
+    Value* v = alloc_val(T_CONT);
+    if (!v) return NULL;
+    v->cont.fn = fn;
+    v->cont.menv = menv;
+    v->cont.tag = tag;
+    return v;
+}
+
+Value* mk_chan(int capacity) {
+    Value* v = alloc_val(T_CHAN);
+    if (!v) return NULL;
+
+    // Allocate the Channel structure
+    Channel* ch = malloc(sizeof(Channel));
+    if (!ch) {
+        if (!compiler_arena_current) free(v);
+        return NULL;
+    }
+
+    ch->capacity = capacity;
+    ch->head = 0;
+    ch->tail = 0;
+    ch->count = 0;
+    ch->closed = 0;
+    ch->send_waiters = NULL;
+    ch->recv_waiters = NULL;
+
+    // Allocate buffer for buffered channels
+    if (capacity > 0) {
+        ch->buffer = malloc(sizeof(Value*) * capacity);
+        if (!ch->buffer) {
+            free(ch);
+            if (!compiler_arena_current) free(v);
+            return NULL;
+        }
+        for (int i = 0; i < capacity; i++) {
+            ch->buffer[i] = NULL;
+        }
+    } else {
+        ch->buffer = NULL;
+    }
+
+    v->chan.ch = ch;
+    v->chan.capacity = capacity;
+    return v;
+}
+
+Value* mk_process(Value* thunk) {
+    Value* v = alloc_val(T_PROCESS);
+    if (!v) return NULL;
+    v->proc.thunk = thunk;
+    v->proc.cont = NULL;
+    v->proc.menv = NULL;
+    v->proc.result = NULL;
+    v->proc.park_value = NULL;
+    v->proc.state = PROC_READY;
+    return v;
+}
+
+// -- Type Predicates --
+
+int is_box(Value* v) {
+    return v != NULL && v->tag == T_BOX;
+}
+
+int is_cont(Value* v) {
+    return v != NULL && v->tag == T_CONT;
+}
+
+int is_chan(Value* v) {
+    return v != NULL && v->tag == T_CHAN;
+}
+
+int is_process(Value* v) {
+    return v != NULL && v->tag == T_PROCESS;
+}
+
+int is_error(Value* v) {
+    return v != NULL && v->tag == T_ERROR;
+}
+
+// -- Box Operations --
+
+Value* box_get(Value* box) {
+    if (!box || box->tag != T_BOX) return NULL;
+    return box->box_value;
+}
+
+void box_set(Value* box, Value* val) {
+    if (box && box->tag == T_BOX) {
+        box->box_value = val;
+    }
+}
+
 // -- Value Helpers --
 
 int is_nil(Value* v) {
@@ -246,6 +363,44 @@ char* val_to_str(Value* v) {
             return strdup("#<lambda>");
         case T_MENV:
             return strdup("#<menv>");
+        case T_ERROR:
+            ds = ds_new();
+            if (!ds) return NULL;
+            ds_append(ds, "#<error: ");
+            if (v->s) ds_append(ds, v->s);
+            ds_append(ds, ">");
+            return ds_take(ds);
+        case T_BOX:
+            ds = ds_new();
+            if (!ds) return NULL;
+            ds_append(ds, "#<box ");
+            if (v->box_value) {
+                char* inner = val_to_str(v->box_value);
+                if (inner) {
+                    ds_append(ds, inner);
+                    free(inner);
+                }
+            } else {
+                ds_append(ds, "nil");
+            }
+            ds_append(ds, ">");
+            return ds_take(ds);
+        case T_CONT:
+            return strdup("#<continuation>");
+        case T_CHAN:
+            ds = ds_new();
+            if (!ds) return NULL;
+            ds_printf(ds, "#<channel cap=%d>", v->chan.capacity);
+            return ds_take(ds);
+        case T_PROCESS: {
+            const char* state_names[] = {"ready", "running", "parked", "done"};
+            const char* state = (v->proc.state >= 0 && v->proc.state <= 3)
+                                ? state_names[v->proc.state] : "unknown";
+            ds = ds_new();
+            if (!ds) return NULL;
+            ds_printf(ds, "#<process %s>", state);
+            return ds_take(ds);
+        }
         default:
             return strdup("?");
     }

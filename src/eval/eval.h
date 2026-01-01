@@ -83,7 +83,72 @@ extern Value* SYM_EM;
 extern Value* SYM_SCAN;
 extern Value* SYM_GET_META;
 extern Value* SYM_SET_META;
+extern Value* SYM_SET_BANG;
+extern Value* SYM_DEFINE;
+extern Value* SYM_DO;
+extern Value* SYM_CALL_CC;
+extern Value* SYM_PROMPT;
+extern Value* SYM_CONTROL;
+extern Value* SYM_GO;
+extern Value* SYM_SELECT;
 
 void init_syms(void);
+
+// -- Global Environment --
+
+void global_define(Value* sym, Value* val);
+Value* global_lookup(Value* sym);
+int env_set(Value* env, Value* sym, Value* val);
+
+// -- New Primitives --
+
+// Box operations
+Value* prim_box(Value* args, Value* menv);
+Value* prim_unbox(Value* args, Value* menv);
+Value* prim_set_box(Value* args, Value* menv);
+Value* prim_is_box(Value* args, Value* menv);
+
+// I/O operations
+Value* prim_display(Value* args, Value* menv);
+Value* prim_newline(Value* args, Value* menv);
+Value* prim_print(Value* args, Value* menv);
+Value* prim_read(Value* args, Value* menv);
+
+// Channel operations
+Value* prim_make_chan(Value* args, Value* menv);
+Value* prim_chan_send(Value* args, Value* menv);
+Value* prim_chan_recv(Value* args, Value* menv);
+Value* prim_chan_close(Value* args, Value* menv);
+Value* prim_is_chan(Value* args, Value* menv);
+Value* prim_is_process(Value* args, Value* menv);
+
+// Type predicates
+Value* prim_is_cont(Value* args, Value* menv);
+Value* prim_is_error(Value* args, Value* menv);
+
+// -- Continuation Operations (A3) --
+
+Value* eval_call_cc(Value* args, Value* menv);
+Value* eval_prompt(Value* args, Value* menv);
+Value* eval_control(Value* args, Value* menv);
+Value* invoke_continuation(Value* cont, Value* val);
+
+// -- CSP Operations (A4) --
+
+Value* eval_go(Value* args, Value* menv);
+Value* eval_select(Value* args, Value* menv);
+Value* scheduler_spawn(Value* thunk, Value* menv);
+void scheduler_run(Value* menv);
+void scheduler_park(Value* proc);
+void scheduler_unpark(Value* proc, Value* val);
+
+// -- User-Defined Types (A5) --
+
+Value* eval_deftype(Value* args, Value* menv);
+Value* prim_make_type_instance(Value* args, Value* menv);
+Value* prim_type_get_field(Value* args, Value* menv);
+Value* prim_type_set_field(Value* args, Value* menv);
+Value* prim_type_is(Value* args, Value* menv);
+void register_deftype_primitives(Value* env);
 
 #endif // PURPLE_EVAL_H
