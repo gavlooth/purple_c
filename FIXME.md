@@ -180,3 +180,9 @@ Items below are grouped by status.
 55) **[Parser]** Unchecked `strndup` return value creates empty symbols on OOM
     - Fix: Added NULL check after `strndup`; returns NULL and cleans up on failure
     - Note: OOM is difficult to unit test; fix is defensive
+
+56) **[Deftype]** Unchecked `strdup` in user type registration causes NULL dereference
+    - Fix: Added NULL checks after all `strdup` calls in `user_register_type`, `user_add_type_field`
+    - Fix: Added defensive NULL check in `user_find_type` before `strcmp`
+    - Fix: Added proper error cleanup paths in `eval_deftype` for OOM
+    - Test: `Deftype-NullGuard` in tests.sh

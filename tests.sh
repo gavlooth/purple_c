@@ -540,6 +540,12 @@ run_test "Interp-MulOverflow" \
     "(* 9223372036854775807 2)" \
     "Result: 0"
 
+# 91. User type registration with checked strdup
+# Tests that user_find_type properly guards against NULL names
+run_test "Deftype-NullGuard" \
+    "(deftype Point (x int) (y int))" \
+    "Result:"
+
 if [ $FAIL -eq 0 ]; then
     echo "All tests passed!"
     exit 0

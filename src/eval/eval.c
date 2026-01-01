@@ -1802,28 +1802,44 @@ static int user_type_count = 0;
 static int user_register_type(const char* name) {
     if (user_type_count >= MAX_USER_TYPES) return -1;
 
+    char* name_copy = strdup(name);
+    if (!name_copy) return -1;  // OOM
+
     int idx = user_type_count++;
-    user_type_registry[idx].name = strdup(name);
+    user_type_registry[idx].name = name_copy;
     user_type_registry[idx].field_count = 0;
     return idx;
 }
 
 // Add a field to a user type
-static void user_add_type_field(int type_idx, const char* name, const char* type, int is_weak) {
-    if (type_idx < 0 || type_idx >= user_type_count) return;
+// Returns 0 on success, -1 on failure (OOM or invalid args)
+static int user_add_type_field(int type_idx, const char* name, const char* type, int is_weak) {
+    if (type_idx < 0 || type_idx >= user_type_count) return -1;
     UserTypeDef* td = &user_type_registry[type_idx];
-    if (td->field_count >= MAX_USER_FIELDS) return;
+    if (td->field_count >= MAX_USER_FIELDS) return -1;
+
+    char* name_copy = strdup(name);
+    if (!name_copy) return -1;  // OOM
+
+    char* type_copy = strdup(type);
+    if (!type_copy) {
+        free(name_copy);
+        return -1;  // OOM
+    }
 
     int idx = td->field_count++;
-    td->field_names[idx] = strdup(name);
-    td->field_types[idx] = strdup(type);
+    td->field_names[idx] = name_copy;
+    td->field_types[idx] = type_copy;
     td->is_weak[idx] = is_weak;
+    return 0;
 }
 
 // Find a user type by name
 static UserTypeDef* user_find_type(const char* name) {
+    if (!name) return NULL;
     for (int i = 0; i < user_type_count; i++) {
-        if (strcmp(user_type_registry[i].name, name) == 0) {
+        // Defensive: skip entries with NULL names (shouldn't happen)
+        if (user_type_registry[i].name && strcmp(user_type_registry[i].name, name) == 0) {
             return &user_type_registry[i];
         }
     }
@@ -2088,7 +2104,7 @@ Value* eval_deftype(Value* args, Value* menv) {
     // Register the type
     int type_idx = user_register_type(type_name);
     if (type_idx < 0) {
-        return mk_error("deftype: too many types");
+        return mk_error("deftype: registration failed (too many types or OOM)");
     }
 
     // Parse field definitions
@@ -2122,10 +2138,24 @@ Value* eval_deftype(Value* args, Value* menv) {
             is_weak = 1;
         }
 
-        user_add_type_field(type_idx, fname, ftype, is_weak);
+        if (user_add_type_field(type_idx, fname, ftype, is_weak) < 0) {
+            // Clean up already allocated field names and return error
+            for (int i = 0; i < field_count; i++) {
+                free(field_names[i]);
+            }
+            return mk_error("deftype: field registration failed (OOM)");
+        }
 
         if (field_count < MAX_USER_FIELDS) {
-            field_names[field_count++] = strdup(fname);
+            char* fname_copy = strdup(fname);
+            if (!fname_copy) {
+                // Clean up already allocated field names and return error
+                for (int i = 0; i < field_count; i++) {
+                    free(field_names[i]);
+                }
+                return mk_error("deftype: field name allocation failed (OOM)");
+            }
+            field_names[field_count++] = fname_copy;
         }
 
         field_defs = cdr(field_defs);
