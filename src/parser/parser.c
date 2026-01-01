@@ -169,6 +169,14 @@ Value* parse(void) {
                         parse_ptr++;
                     }
                     char* s = strndup(start, parse_ptr - start);
+                    if (!s) {
+                        fprintf(stderr, "Parser OOM\n");
+                        while (stack) {
+                            ParseFrame* f = pop_frame(&stack);
+                            free(f);
+                        }
+                        return NULL;
+                    }
                     current_result = mk_sym(s);
                     free(s);
                 }

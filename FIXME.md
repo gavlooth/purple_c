@@ -176,3 +176,7 @@ Items below are grouped by status.
 54) **[Concurrent]** Division by zero in generated `channel_create` when capacity is 0
     - Fix: Added `if (capacity <= 0) return NULL` guard
     - Test: `Phase11-ChannelZeroCap` in tests.sh
+
+55) **[Parser]** Unchecked `strndup` return value creates empty symbols on OOM
+    - Fix: Added NULL check after `strndup`; returns NULL and cleans up on failure
+    - Note: OOM is difficult to unit test; fix is defensive
