@@ -103,6 +103,14 @@ Value* parse(void) {
                 // Quote expands to (quote <next>)
                 // We create a list (quote) and expect 1 more item
                 Value* q = mk_cell(SYM_QUOTE ? SYM_QUOTE : mk_sym("quote"), NIL);
+                if (!q) {
+                    fprintf(stderr, "Parser OOM\n");
+                    while (stack) {
+                        ParseFrame* f = pop_frame(&stack);
+                        free(f);
+                    }
+                    return NULL;
+                }
                 push_frame(&stack, q, 0, 1);
                 continue;
             }
@@ -162,6 +170,14 @@ Value* parse(void) {
                     } else {
                         parse_ptr = endptr;
                         current_result = mk_int(i);
+                        if (!current_result) {
+                            fprintf(stderr, "Parser OOM\n");
+                            while (stack) {
+                                ParseFrame* f = pop_frame(&stack);
+                                free(f);
+                            }
+                            return NULL;
+                        }
                     }
                 } else {
                     const char* start = parse_ptr;
@@ -179,6 +195,14 @@ Value* parse(void) {
                     }
                     current_result = mk_sym(s);
                     free(s);
+                    if (!current_result) {
+                        fprintf(stderr, "Parser OOM\n");
+                        while (stack) {
+                            ParseFrame* f = pop_frame(&stack);
+                            free(f);
+                        }
+                        return NULL;
+                    }
                 }
                 result_ready = 1;
             }
@@ -190,7 +214,16 @@ Value* parse(void) {
             if (!stack) {
                 return current_result;
             } else {
-                stack->list = mk_cell(current_result, stack->list);
+                Value* new_cell = mk_cell(current_result, stack->list);
+                if (!new_cell) {
+                    fprintf(stderr, "Parser OOM\n");
+                    while (stack) {
+                        ParseFrame* f = pop_frame(&stack);
+                        free(f);
+                    }
+                    return NULL;
+                }
+                stack->list = new_cell;
                 stack->items_read++;
                 current_result = NULL;
             }

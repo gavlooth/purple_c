@@ -558,6 +558,18 @@ run_test "MkMenv-LetBinding" \
     "(let ((a 5) (b 10)) (+ a b))" \
     "Result: 15"
 
+# 94. Parser handles deeply nested list allocation
+# Exercises checked mk_cell allocation in parser
+run_test "Parser-NestedLists" \
+    "(car (cdr (cons 1 (cons 2 (cons 3 nil)))))" \
+    "Result: 2"
+
+# 95. Parser handles quote expansion with checked mk_cell
+# Exercises quote expansion path in parser
+run_test "Parser-QuoteAlloc" \
+    "(car '(1 2 3))" \
+    "Result: 1"
+
 if [ $FAIL -eq 0 ]; then
     echo "All tests passed!"
     exit 0

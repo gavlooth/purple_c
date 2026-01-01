@@ -196,3 +196,12 @@ Items below are grouped by status.
       - `eval` (EM meta-level creation)
       - `main` (initial menv creation)
     - Tests: `MkMenv-FunctionApp`, `MkMenv-LetBinding` in tests.sh
+
+58) **[Parser]** Unchecked `mk_cell`, `mk_int`, `mk_sym` return values cause silent corruption on OOM
+    - Fix: Added NULL checks after all allocation calls in `parse()`:
+      - `mk_int` for integer literals
+      - `mk_sym` for symbol atoms
+      - `mk_cell` for quote expansion
+      - `mk_cell` for list element accumulation
+    - Fix: Parser now properly cleans up stack frames and returns NULL on OOM
+    - Tests: `Parser-NestedLists`, `Parser-QuoteAlloc` in tests.sh
