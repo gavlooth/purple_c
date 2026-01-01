@@ -713,3 +713,181 @@ Call Graph with Shape Dependencies:
 6. [Region-Based Memory Management](https://elsman.com/mlkit/) - Tofte & Talpin / MLKit
 7. [MemFix: Static Analysis-Based Repair](https://dl.acm.org/doi/10.1145/3236024.3236079) - Lee et al., 2018
 8. [A Lightweight Formalism for Rust Lifetimes](https://dl.acm.org/doi/10.1145/3443420) - ACM TOPLAS
+
+---
+
+## CSP Concurrency Implementation (Aligned with Go Reference)
+
+The C implementation has been aligned with the Go reference implementation (`purple_go`) for CSP-style concurrency.
+
+### Changes Made (2026-01-01)
+
+#### 1. Escape-Based `call/cc` Using `setjmp/longjmp`
+
+**Before**: Continuations stored frame data but invocation didn't properly escape.
+
+**After**: Matches Go's `panic/recover` pattern using C's `setjmp/longjmp`:
+
+```c
+// Continuation stack for nested call/cc
+#define MAX_CONT_DEPTH 256
+typedef struct {
+    jmp_buf buf;
+    int tag;
+    Value* result;
+} ContJumpPoint;
+
+ContJumpPoint g_cont_stack[MAX_CONT_DEPTH];
+int g_cont_stack_top = 0;
+
+// Each continuation has a unique tag for escape matching
+Value* prim_call_cc(Value* args, Value* menv) {
+    Value* cont = mk_cont(NULL, menv);
+    int stack_idx = g_cont_stack_top++;
+    g_cont_stack[stack_idx].tag = cont->cont.tag;
+
+    if (setjmp(g_cont_stack[stack_idx].buf) != 0) {
+        // Continuation was invoked via longjmp
+        return g_cont_stack[stack_idx].result;
+    }
+    // Normal path: evaluate with continuation bound
+    ...
+}
+
+// Invoking a continuation escapes via longjmp
+Value* invoke_cont(Value* cont, Value* val) {
+    for (int i = g_cont_stack_top - 1; i >= 0; i--) {
+        if (g_cont_stack[i].tag == cont->cont.tag) {
+            g_cont_stack[i].result = val;
+            longjmp(g_cont_stack[i].buf, 1);
+        }
+    }
+}
+```
+
+**Files**: `main.c:2520-2572`, `main.c:2420-2442`
+
+#### 2. Buffered Channels with Capacity
+
+**Before**: Only unbuffered rendezvous channels.
+
+**After**: Supports both unbuffered (capacity=0) and buffered channels:
+
+```c
+struct {                // T_CHANNEL
+    Value* send_queue;  // Waiting senders
+    Value* recv_queue;  // Waiting receivers
+    Value** buffer;     // Circular buffer for buffered channels
+    int capacity;       // 0 = unbuffered
+    int count;          // Items in buffer
+    int head, tail;     // Read/write positions
+    int closed;         // Channel closed flag
+    int id;
+} chan;
+```
+
+**Usage**:
+```scheme
+(channel-create)     ; Unbuffered channel (rendezvous)
+(channel-create 10)  ; Buffered channel with capacity 10
+```
+
+**Files**: `main.c:102-112`, `main.c:2485-2496`, `main.c:2576-2677`
+
+#### 3. Channel Close Primitive
+
+**Added**: `channel-close` primitive matching Go's `close(ch)`:
+
+```scheme
+(channel-close ch)   ; Close channel, no more sends allowed
+```
+
+**Behavior**:
+- Sends to closed channel error
+- Receives from closed+empty channel return NIL
+- Waiting receivers are unparked with NIL
+
+**Files**: `main.c:2497-2519`
+
+#### 4. Select Statement for Multi-Channel Wait
+
+**Added**: `select` primitive matching Go's select statement:
+
+```scheme
+(select
+  (recv ch1 x => (+ x 1))        ; Receive with binding
+  (recv ch2 => (print "got"))    ; Receive without binding
+  (send ch3 42 => (print "sent"))
+  (default => (print "no-op")))
+```
+
+**Semantics**:
+- Tries each case without blocking
+- Executes first ready case
+- Falls back to default if no case ready
+- Returns NIL if no case ready and no default
+
+**Files**: `main.c:2693-2937`
+
+#### 5. Green Thread Scheduler with `go`
+
+**Added**: Process type and scheduler for green threads:
+
+```c
+typedef enum {
+    PROC_READY   = 0,
+    PROC_RUNNING = 1,
+    PROC_PARKED  = 2,  // Blocked on channel
+    PROC_DONE    = 3,
+} ProcState;
+
+typedef struct {
+    Value* queue[256];  // Run queue
+    int head, tail, count;
+    Value* current;
+    int running;
+} Scheduler;
+```
+
+**Usage**:
+```scheme
+(go (channel-send ch 42))  ; Spawn green thread
+```
+
+**Scheduler functions**:
+- `scheduler_enqueue(proc)` - Add to run queue
+- `scheduler_dequeue()` - Get next ready process
+- `scheduler_park(proc)` - Mark as parked (blocked)
+- `scheduler_unpark(proc, val)` - Wake with value
+
+**Files**: `main.c:49-55`, `main.c:113-119`, `main.c:177-187`, `main.c:2939-2989`
+
+### Registered Primitives
+
+All concurrency primitives are registered in main():
+
+```c
+env = env_extend(env, mk_sym("call/cc"), mk_prim(prim_call_cc));
+env = env_extend(env, mk_sym("channel-create"), mk_prim(prim_channel_create));
+env = env_extend(env, mk_sym("channel-send"), mk_prim(prim_channel_send));
+env = env_extend(env, mk_sym("channel-recv"), mk_prim(prim_channel_recv));
+env = env_extend(env, mk_sym("invoke-continuation"), mk_prim(prim_invoke_cont));
+env = env_extend(env, mk_sym("channel-close"), mk_prim(prim_channel_close));
+env = env_extend(env, mk_sym("go"), mk_prim(prim_go));
+env = env_extend(env, mk_sym("select"), mk_prim(prim_select));
+```
+
+### Key Terminology Alignment
+
+| Go Term | C Term | Meaning |
+|---------|--------|---------|
+| `panic/recover` | `longjmp/setjmp` | Continuation escape mechanism |
+| Goroutine | Process (`T_PROCESS`) | Green thread |
+| Channel park | `scheduler_park()` | Block on channel via continuation capture |
+| Channel unpark | `scheduler_unpark()` | Resume with received value |
+
+### References
+
+- SOTER: Safe Ownership Transfer for Message Passing (PLDI 2011)
+- Concurrent Deferred Reference Counting (PLDI 2021)
+- CIRC: Concurrent Reference Counting (PLDI 2024)

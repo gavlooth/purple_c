@@ -6,6 +6,7 @@
 #include <stdarg.h>
 #include <errno.h>
 #include <limits.h>
+#include <setjmp.h>
 #include "util/dstring.h"
 
 /* 
@@ -31,7 +32,7 @@
 
 // -- Types --
 
-typedef enum { 
+typedef enum {
     T_INT,      // 42
     T_SYM,      // x, +, lambda
     T_CELL,     // (a . b)
@@ -40,7 +41,18 @@ typedef enum {
     T_CODE,     // <Code: C_Source_String>
     T_NIL,      // ()
     T_MENV,     // Meta-Environment (The Tower Level)
+    T_CONT,     // First-class continuation (for call/cc)
+    T_CHANNEL,  // CSP channel (rendezvous-based)
+    T_PROCESS,  // Green thread / process
 } Tag;
+
+// Process states (matches Go's scheduler)
+typedef enum {
+    PROC_READY   = 0,  // Ready to run
+    PROC_RUNNING = 1,  // Currently executing
+    PROC_PARKED  = 2,  // Blocked on channel
+    PROC_DONE    = 3,  // Completed
+} ProcState;
 
 struct Value;
 
@@ -53,6 +65,9 @@ typedef struct Value* (*PrimFn)(struct Value* args, struct Value* menv);
 // Handler function signature (for meta-level semantics like 'app', 'let')
 // Takes: exp, menv, and 'next' (continuation/fallback? kept simple here)
 typedef struct Value* (*HandlerFn)(struct Value* exp, struct Value* menv);
+
+// Forward declarations for continuation
+struct ContFrame;
 
 typedef struct Value {
     Tag tag;
@@ -79,8 +94,97 @@ typedef struct Value {
             HandlerFn h_lit;
             HandlerFn h_var;
         } menv;
+        struct {                // T_CONT - First-class continuation
+            struct ContFrame* frames;  // Saved continuation frames
+            struct Value* menv;        // Captured meta-environment
+            int tag;                   // Unique tag for escape matching (like Go)
+        } cont;
+        struct {                // T_CHANNEL - CSP channel (matches Go)
+            struct Value* send_queue;  // List of (value . continuation) waiting to send
+            struct Value* recv_queue;  // List of continuations waiting to receive
+            struct Value** buffer;     // Circular buffer for buffered channels
+            int capacity;              // 0 = unbuffered (rendezvous)
+            int count;                 // Current items in buffer
+            int head;                  // Read position
+            int tail;                  // Write position
+            int closed;                // 1 if channel is closed
+            int id;                    // Channel identifier for debugging
+        } chan;
+        struct {                // T_PROCESS - Green thread (matches Go)
+            struct Value* cont;        // Current continuation
+            struct Value* result;      // Result when done
+            struct Value* park_value;  // Value received when unparked
+            ProcState state;           // Process state
+            int id;                    // Process ID
+        } proc;
     };
 } Value;
+
+// -- Continuation Infrastructure (for call/cc and CSP channels) --
+// Based on Go's escape-based implementation using panic/recover
+// We use setjmp/longjmp for the same effect in C
+
+// ContFrame represents a single frame in the continuation stack
+typedef enum {
+    CONT_DONE,      // End of continuation
+    CONT_APPLY,     // Apply a function
+    CONT_IF,        // If branch pending
+    CONT_LET,       // Let binding pending
+} ContFrameType;
+
+typedef struct ContFrame {
+    ContFrameType type;
+    Value* data;            // Frame-specific data
+    Value* menv;            // Environment at this point
+    struct ContFrame* next; // Previous frame (outer continuation)
+} ContFrame;
+
+// Continuation escape state (like Go's contEscape struct)
+typedef struct {
+    Value* value;           // Value to pass to continuation
+    int tag;                // Tag of continuation being invoked
+    int active;             // Is there an active escape?
+    jmp_buf* jump_target;   // Where to longjmp to
+} ContEscape;
+
+// Global escape state
+ContEscape g_cont_escape = {NULL, 0, 0, NULL};
+
+// Stack of active call/cc jump buffers (for nested call/cc)
+#define MAX_CONT_DEPTH 256
+typedef struct {
+    jmp_buf buf;
+    int tag;
+    Value* result;
+} ContJumpPoint;
+
+ContJumpPoint g_cont_stack[MAX_CONT_DEPTH];
+int g_cont_stack_top = 0;
+
+// Unique tag counter for continuations
+int g_next_cont_tag = 1;
+
+// Channel and process ID counters
+int g_next_channel_id = 1;
+int g_next_process_id = 1;
+
+// Forward declarations for continuation/channel/process functions
+Value* mk_cont(ContFrame* frames, Value* menv);
+Value* mk_channel(int capacity);
+Value* mk_process(Value* thunk);
+Value* invoke_cont(Value* cont, Value* val);
+
+// Scheduler state (simple run queue)
+typedef struct {
+    Value* queue[256];      // Run queue (circular buffer)
+    int head;
+    int tail;
+    int count;
+    Value* current;         // Currently running process
+    int running;            // Is scheduler active?
+} Scheduler;
+
+Scheduler g_scheduler = {{NULL}, 0, 0, 0, NULL, 0};
 
 // -- ASAP Analysis Infrastructure --
 
@@ -933,6 +1037,10 @@ Value* SYM_EM;
 Value* SYM_SCAN;
 Value* SYM_GET_META;
 Value* SYM_SET_META;
+Value* SYM_CALL_CC;
+Value* SYM_CHAN_CREATE;
+Value* SYM_CHAN_SEND;
+Value* SYM_CHAN_RECV;
 
 // -- Memory Management --
 
@@ -991,6 +1099,63 @@ Value* mk_lambda(Value* params, Value* body, Value* env) {
     v->lam.env = env;
     return v;
 }
+
+// -- Continuation, Channel & Process Constructors --
+
+Value* mk_cont(ContFrame* frames, Value* menv) {
+    Value* v = alloc_val(T_CONT);
+    if (!v) return NULL;
+    v->cont.frames = frames;
+    v->cont.menv = menv;
+    v->cont.tag = g_next_cont_tag++;  // Unique tag for escape matching
+    return v;
+}
+
+// Create a channel with optional buffering (capacity=0 for unbuffered/rendezvous)
+Value* mk_channel(int capacity) {
+    Value* v = alloc_val(T_CHANNEL);
+    if (!v) return NULL;
+    v->chan.send_queue = NIL;
+    v->chan.recv_queue = NIL;
+    v->chan.capacity = capacity;
+    v->chan.count = 0;
+    v->chan.head = 0;
+    v->chan.tail = 0;
+    v->chan.closed = 0;
+    v->chan.id = g_next_channel_id++;
+
+    // Allocate buffer if capacity > 0
+    if (capacity > 0) {
+        v->chan.buffer = malloc(capacity * sizeof(Value*));
+        if (!v->chan.buffer) {
+            free(v);
+            return NULL;
+        }
+        for (int i = 0; i < capacity; i++) {
+            v->chan.buffer[i] = NULL;
+        }
+    } else {
+        v->chan.buffer = NULL;
+    }
+    return v;
+}
+
+// Create a process/green thread
+Value* mk_process(Value* thunk) {
+    Value* v = alloc_val(T_PROCESS);
+    if (!v) return NULL;
+    v->proc.cont = thunk;
+    v->proc.result = NIL;
+    v->proc.park_value = NIL;
+    v->proc.state = PROC_READY;
+    v->proc.id = g_next_process_id++;
+    return v;
+}
+
+// Type predicates
+int is_cont(Value* v) { return v && v->tag == T_CONT; }
+int is_channel(Value* v) { return v && v->tag == T_CHANNEL; }
+int is_process(Value* v) { return v && v->tag == T_PROCESS; }
 
 // -- Helpers --
 
@@ -1054,6 +1219,29 @@ char* val_to_str(Value* v) {
         case T_PRIM: return strdup("#<prim>");
         case T_LAMBDA: return strdup("#<lambda>");
         case T_MENV: return strdup("#<menv>");
+        case T_CONT: return strdup("#<continuation>");
+        case T_CHANNEL: {
+            ds = ds_new();
+            if (!ds) return strdup("#<channel>");
+            if (v->chan.capacity > 0) {
+                ds_printf(ds, "#<channel:%d cap=%d cnt=%d%s>",
+                    v->chan.id, v->chan.capacity, v->chan.count,
+                    v->chan.closed ? " closed" : "");
+            } else {
+                ds_printf(ds, "#<channel:%d%s>",
+                    v->chan.id, v->chan.closed ? " closed" : "");
+            }
+            return ds_take(ds);
+        }
+        case T_PROCESS: {
+            ds = ds_new();
+            if (!ds) return strdup("#<process>");
+            const char* state_str = v->proc.state == PROC_READY ? "ready" :
+                                   v->proc.state == PROC_RUNNING ? "running" :
+                                   v->proc.state == PROC_PARKED ? "parked" : "done";
+            ds_printf(ds, "#<process:%d %s>", v->proc.id, state_str);
+            return ds_take(ds);
+        }
         default: return strdup("?");
     }
 }
@@ -1789,44 +1977,50 @@ Value* h_app_default(Value* exp, Value* menv) {
     // exp is (f arg1 arg2 ...)
     Value* f_expr = car(exp);
     Value* args_expr = cdr(exp);
-    
+
     // Check for special forms that look like apps but are handled by eval dispatcher
     // (Actually eval dispatcher calls h_app only for "unknown" heads that turn out to be functions)
     // But here we need to EVAL the function position first.
-    
+
     Value* fn = eval(f_expr, menv);
     Value* args = eval_list(args_expr, menv);
-    
+
     // Stage Polymorphism for Primitives
     if (fn->tag == T_PRIM) return fn->prim(args, menv);
-    
+
+    // Continuation invocation: (k value) invokes continuation k with value
+    if (fn->tag == T_CONT) {
+        Value* val = is_nil(args) ? NIL : car(args);
+        return invoke_cont(fn, val);
+    }
+
     if (fn->tag == T_LAMBDA) {
         Value* params = fn->lam.params;
         Value* body = fn->lam.body;
         Value* closure_env = fn->lam.env; // Lexical scope
-        
+
         // We create a NEW MEnv for the function body execution
-        // It inherits Handlers from 'menv' (dynamic scope for reflection) 
+        // It inherits Handlers from 'menv' (dynamic scope for reflection)
         // but uses 'closure_env' extended with args for bindings (lexical scope for vars)
-        
+
         Value* new_env = closure_env;
-        Value* p = params; 
+        Value* p = params;
         Value* a = args;
         while (!is_nil(p) && !is_nil(a)) {
             new_env = env_extend(new_env, car(p), car(a));
             p = cdr(p); a = cdr(a);
         }
-        
+
         // Construct MEnv for body: same parent/handlers as current, new env
         Value* body_menv = mk_menv(menv->menv.parent, new_env);
         // Copy handlers (shallow copy of pointers)
         body_menv->menv.h_app = menv->menv.h_app;
         body_menv->menv.h_let = menv->menv.h_let;
         body_menv->menv.h_if  = menv->menv.h_if;
-        
+
         return eval(body, body_menv);
     }
-    
+
     char* fn_str = val_to_str(fn);
     printf("Error: Not a function: %s\n", fn_str ? fn_str : "(null)");
     free(fn_str);
@@ -2214,6 +2408,585 @@ Value* prim_run(Value* args, Value* menv) {
     return eval(car(args), menv);
 }
 
+// -- Continuation & CSP Channel Primitives --
+// Based on Go's channel implementation pattern:
+// - Escape-based call/cc using setjmp/longjmp (like Go's panic/recover)
+// - Buffered channels with capacity (like Go's make(chan T, n))
+// - Processes park when channel operations would block
+// - Parked continuations are stored in channel queues
+// - Rendezvous resumes parked continuations with values
+
+// Invoke a continuation with a value (causes escape via longjmp)
+Value* invoke_cont(Value* cont, Value* val) {
+    if (!cont || cont->tag != T_CONT) {
+        printf("Error: invoke_cont called on non-continuation\n");
+        return NIL;
+    }
+
+    // Set escape state and longjmp if we have a matching jump point
+    g_cont_escape.value = val;
+    g_cont_escape.tag = cont->cont.tag;
+    g_cont_escape.active = 1;
+
+    // Find matching jump point in stack
+    for (int i = g_cont_stack_top - 1; i >= 0; i--) {
+        if (g_cont_stack[i].tag == cont->cont.tag) {
+            g_cont_stack[i].result = val;
+            longjmp(g_cont_stack[i].buf, 1);
+        }
+    }
+
+    // No matching jump point - continuation escaped its scope
+    printf("Error: continuation invoked outside its dynamic extent\n");
+    return val;
+}
+
+// Helper: Check if channel has waiting senders
+int channel_has_senders(Value* chan) {
+    return chan && chan->tag == T_CHANNEL && !is_nil(chan->chan.send_queue);
+}
+
+// Helper: Check if channel has waiting receivers
+int channel_has_receivers(Value* chan) {
+    return chan && chan->tag == T_CHANNEL && !is_nil(chan->chan.recv_queue);
+}
+
+// Helper: Check if buffered channel has space
+int channel_has_space(Value* chan) {
+    return chan && chan->tag == T_CHANNEL &&
+           chan->chan.capacity > 0 &&
+           chan->chan.count < chan->chan.capacity;
+}
+
+// Helper: Check if buffered channel has data
+int channel_has_data(Value* chan) {
+    return chan && chan->tag == T_CHANNEL &&
+           chan->chan.capacity > 0 &&
+           chan->chan.count > 0;
+}
+
+// Helper: Add to end of queue
+Value* queue_append(Value* queue, Value* item) {
+    if (is_nil(queue)) {
+        return mk_cons(item, NIL);
+    }
+    return mk_cons(car(queue), queue_append(cdr(queue), item));
+}
+
+// Helper: Pop from front of queue (returns cons of (popped . rest))
+Value* queue_pop(Value* queue) {
+    if (is_nil(queue)) return NIL;
+    return mk_cons(car(queue), cdr(queue));
+}
+
+// Primitive: Create a channel with optional capacity
+// (channel-create) -> unbuffered channel
+// (channel-create n) -> buffered channel with capacity n
+Value* prim_channel_create(Value* args, Value* menv) {
+    (void)menv;
+    int capacity = 0;
+    if (!is_nil(args) && car(args)->tag == T_INT) {
+        capacity = (int)car(args)->i;
+        if (capacity < 0) capacity = 0;
+    }
+    return mk_channel(capacity);
+}
+
+// Primitive: Close a channel
+// (channel-close ch) -> nil
+Value* prim_channel_close(Value* args, Value* menv) {
+    (void)menv;
+    Value* chan = car(args);
+    if (!chan || chan->tag != T_CHANNEL) {
+        printf("Error: channel-close requires a channel\n");
+        return NIL;
+    }
+    chan->chan.closed = 1;
+
+    // Wake up any parked receivers with NIL
+    while (channel_has_receivers(chan)) {
+        Value* pop_result = queue_pop(chan->chan.recv_queue);
+        Value* receiver_k = car(pop_result);
+        chan->chan.recv_queue = cdr(pop_result);
+        if (receiver_k && receiver_k->tag == T_CONT) {
+            invoke_cont(receiver_k, NIL);
+        }
+    }
+    return NIL;
+}
+
+// Primitive: call/cc (call-with-current-continuation)
+// (call/cc (lambda (k) body))
+// Uses setjmp/longjmp for proper escape semantics (like Go's panic/recover)
+Value* prim_call_cc(Value* args, Value* menv) {
+    Value* fn = car(args);
+
+    if (!fn || fn->tag != T_LAMBDA) {
+        printf("Error: call/cc requires a lambda\n");
+        return NIL;
+    }
+
+    if (g_cont_stack_top >= MAX_CONT_DEPTH) {
+        printf("Error: call/cc stack overflow\n");
+        return NIL;
+    }
+
+    // Create continuation with unique tag
+    Value* cont = mk_cont(NULL, menv);
+    int tag = cont->cont.tag;
+
+    // Push jump point onto stack
+    int stack_idx = g_cont_stack_top++;
+    g_cont_stack[stack_idx].tag = tag;
+    g_cont_stack[stack_idx].result = NIL;
+
+    // setjmp returns 0 initially, non-zero when longjmp is called
+    if (setjmp(g_cont_stack[stack_idx].buf) != 0) {
+        // We got here via longjmp - continuation was invoked
+        Value* result = g_cont_stack[stack_idx].result;
+        g_cont_stack_top--;
+        g_cont_escape.active = 0;
+        return result;
+    }
+
+    // Normal path: bind continuation and evaluate body
+    Value* params = fn->lam.params;
+    Value* body = fn->lam.body;
+    Value* closure_env = fn->lam.env;
+
+    Value* new_env = closure_env;
+    if (!is_nil(params)) {
+        new_env = env_extend(new_env, car(params), cont);
+    }
+
+    Value* body_menv = mk_menv(menv->menv.parent, new_env);
+    body_menv->menv.h_app = menv->menv.h_app;
+    body_menv->menv.h_let = menv->menv.h_let;
+    body_menv->menv.h_if = menv->menv.h_if;
+
+    Value* result = eval(body, body_menv);
+
+    // Normal return - pop jump point
+    g_cont_stack_top--;
+    return result;
+}
+
+// Channel send with buffering support
+// (channel-send ch val) -> val
+Value* prim_channel_send(Value* args, Value* menv) {
+    Value* chan = car(args);
+    Value* val = car(cdr(args));
+
+    if (!chan || chan->tag != T_CHANNEL) {
+        printf("Error: channel-send requires a channel\n");
+        return NIL;
+    }
+
+    if (chan->chan.closed) {
+        printf("Error: send on closed channel\n");
+        return NIL;
+    }
+
+    // Case 1: Waiting receiver - immediate rendezvous
+    if (channel_has_receivers(chan)) {
+        Value* pop_result = queue_pop(chan->chan.recv_queue);
+        Value* receiver_k = car(pop_result);
+        chan->chan.recv_queue = cdr(pop_result);
+
+        if (receiver_k && receiver_k->tag == T_CONT) {
+            invoke_cont(receiver_k, val);
+        }
+        return val;
+    }
+
+    // Case 2: Buffered channel with space - add to buffer
+    if (channel_has_space(chan)) {
+        chan->chan.buffer[chan->chan.tail] = val;
+        chan->chan.tail = (chan->chan.tail + 1) % chan->chan.capacity;
+        chan->chan.count++;
+        return val;
+    }
+
+    // Case 3: Must park sender
+    Value* sender_k = mk_cont(NULL, menv);
+    Value* sender_entry = mk_cons(val, sender_k);
+    chan->chan.send_queue = queue_append(chan->chan.send_queue, sender_entry);
+    return NIL;  // Parked
+}
+
+// Channel receive with buffering support
+// (channel-recv ch) -> value or NIL if closed
+Value* prim_channel_recv(Value* args, Value* menv) {
+    Value* chan = car(args);
+
+    if (!chan || chan->tag != T_CHANNEL) {
+        printf("Error: channel-recv requires a channel\n");
+        return NIL;
+    }
+
+    // Case 1: Buffered channel with data - read from buffer
+    if (channel_has_data(chan)) {
+        Value* val = chan->chan.buffer[chan->chan.head];
+        chan->chan.head = (chan->chan.head + 1) % chan->chan.capacity;
+        chan->chan.count--;
+
+        // If sender is waiting, move their value to buffer
+        if (channel_has_senders(chan)) {
+            Value* pop_result = queue_pop(chan->chan.send_queue);
+            Value* sender_entry = car(pop_result);
+            chan->chan.send_queue = cdr(pop_result);
+
+            Value* sender_val = car(sender_entry);
+            Value* sender_k = cdr(sender_entry);
+
+            chan->chan.buffer[chan->chan.tail] = sender_val;
+            chan->chan.tail = (chan->chan.tail + 1) % chan->chan.capacity;
+            chan->chan.count++;
+
+            if (sender_k && sender_k->tag == T_CONT) {
+                invoke_cont(sender_k, sender_val);
+            }
+        }
+        return val;
+    }
+
+    // Case 2: Waiting sender - immediate rendezvous
+    if (channel_has_senders(chan)) {
+        Value* pop_result = queue_pop(chan->chan.send_queue);
+        Value* sender_entry = car(pop_result);
+        chan->chan.send_queue = cdr(pop_result);
+
+        Value* val = car(sender_entry);
+        Value* sender_k = cdr(sender_entry);
+
+        if (sender_k && sender_k->tag == T_CONT) {
+            invoke_cont(sender_k, val);
+        }
+        return val;
+    }
+
+    // Case 3: Channel closed and empty
+    if (chan->chan.closed) {
+        return NIL;
+    }
+
+    // Case 4: Must park receiver
+    Value* receiver_k = mk_cont(NULL, menv);
+    chan->chan.recv_queue = queue_append(chan->chan.recv_queue, receiver_k);
+    return NIL;  // Parked
+}
+
+// Primitive for explicit continuation invocation
+Value* prim_invoke_cont(Value* args, Value* menv) {
+    (void)menv;
+    Value* cont = car(args);
+    Value* val = car(cdr(args));
+
+    if (!cont || cont->tag != T_CONT) {
+        printf("Error: invoke-continuation requires a continuation\n");
+        return NIL;
+    }
+
+    return invoke_cont(cont, val);
+}
+
+// -- Select Statement for Multi-Channel Wait (like Go's select) --
+
+// Non-blocking channel send attempt
+// Returns 1 if sent successfully, 0 otherwise
+int try_channel_send(Value* chan, Value* val) {
+    if (!chan || chan->tag != T_CHANNEL) return 0;
+    if (chan->chan.closed) return 0;
+
+    // Check for waiting receiver
+    if (channel_has_receivers(chan)) {
+        Value* pop_result = queue_pop(chan->chan.recv_queue);
+        Value* receiver_k = car(pop_result);
+        chan->chan.recv_queue = cdr(pop_result);
+
+        if (receiver_k && receiver_k->tag == T_CONT) {
+            invoke_cont(receiver_k, val);
+        }
+        return 1;
+    }
+
+    // Check for buffer space
+    if (channel_has_space(chan)) {
+        chan->chan.buffer[chan->chan.tail] = val;
+        chan->chan.tail = (chan->chan.tail + 1) % chan->chan.capacity;
+        chan->chan.count++;
+        return 1;
+    }
+
+    return 0;  // Would block
+}
+
+// Non-blocking channel receive attempt
+// Returns value if received, NULL otherwise
+Value* try_channel_recv(Value* chan) {
+    if (!chan || chan->tag != T_CHANNEL) return NULL;
+
+    // Check buffer first
+    if (channel_has_data(chan)) {
+        Value* val = chan->chan.buffer[chan->chan.head];
+        chan->chan.head = (chan->chan.head + 1) % chan->chan.capacity;
+        chan->chan.count--;
+
+        // Wake up waiting sender if any
+        if (channel_has_senders(chan)) {
+            Value* pop_result = queue_pop(chan->chan.send_queue);
+            Value* sender_entry = car(pop_result);
+            chan->chan.send_queue = cdr(pop_result);
+
+            Value* sender_val = car(sender_entry);
+            Value* sender_k = cdr(sender_entry);
+
+            // Move sender's value to buffer
+            chan->chan.buffer[chan->chan.tail] = sender_val;
+            chan->chan.tail = (chan->chan.tail + 1) % chan->chan.capacity;
+            chan->chan.count++;
+
+            if (sender_k && sender_k->tag == T_CONT) {
+                invoke_cont(sender_k, sender_val);
+            }
+        }
+        return val;
+    }
+
+    // Check for waiting sender (unbuffered or empty buffer)
+    if (channel_has_senders(chan)) {
+        Value* pop_result = queue_pop(chan->chan.send_queue);
+        Value* sender_entry = car(pop_result);
+        chan->chan.send_queue = cdr(pop_result);
+
+        Value* val = car(sender_entry);
+        Value* sender_k = cdr(sender_entry);
+
+        if (sender_k && sender_k->tag == T_CONT) {
+            invoke_cont(sender_k, val);
+        }
+        return val;
+    }
+
+    // Closed channel returns special marker
+    if (chan->chan.closed) {
+        return NIL;  // Indicates closed
+    }
+
+    return NULL;  // Would block
+}
+
+// Symbol for arrow (=>)
+Value* SYM_ARROW = NULL;
+Value* SYM_RECV = NULL;
+Value* SYM_SEND = NULL;
+Value* SYM_DEFAULT = NULL;
+
+// Select case structure
+typedef struct SelectCase {
+    Value* channel;
+    int is_send;
+    Value* send_val;      // For send cases
+    Value* recv_var;      // For recv cases (variable to bind)
+    Value* body;
+} SelectCase;
+
+// Primitive: select statement
+// (select (recv ch var => body) (send ch val => body) (default => body))
+Value* prim_select(Value* args, Value* menv) {
+    if (is_nil(args)) return NIL;
+
+    // Parse cases
+    SelectCase cases[16];
+    int num_cases = 0;
+    Value* default_body = NULL;
+
+    Value* rest = args;
+    while (!is_nil(rest) && rest->tag == T_CELL) {
+        if (num_cases >= 16) break;
+
+        Value* clause = car(rest);
+        if (!clause || clause->tag != T_CELL) {
+            rest = cdr(rest);
+            continue;
+        }
+
+        Value* first = car(clause);
+
+        // Check for default clause
+        if (first && first->tag == T_SYM && strcmp(first->s, "default") == 0) {
+            Value* after = cdr(clause);
+            if (!is_nil(after) && after->tag == T_CELL) {
+                Value* arrow = car(after);
+                if (arrow && arrow->tag == T_SYM && strcmp(arrow->s, "=>") == 0) {
+                    if (!is_nil(cdr(after)) && cdr(after)->tag == T_CELL) {
+                        default_body = car(cdr(after));
+                    }
+                }
+            }
+            rest = cdr(rest);
+            continue;
+        }
+
+        // Parse recv clause: (recv ch => body) or (recv ch var => body)
+        if (first && first->tag == T_SYM && strcmp(first->s, "recv") == 0) {
+            Value* after_recv = cdr(clause);
+            if (!is_nil(after_recv) && after_recv->tag == T_CELL) {
+                Value* ch_expr = car(after_recv);
+                Value* ch = eval(ch_expr, menv);
+
+                Value* after_ch = cdr(after_recv);
+                Value* recv_var = NULL;
+                Value* arrow_rest = NULL;
+
+                if (!is_nil(after_ch) && after_ch->tag == T_CELL) {
+                    Value* next = car(after_ch);
+                    if (next && next->tag == T_SYM && strcmp(next->s, "=>") == 0) {
+                        // No variable: (recv ch => body)
+                        arrow_rest = after_ch;
+                    } else if (next && next->tag == T_SYM) {
+                        // Has variable: (recv ch var => body)
+                        recv_var = next;
+                        arrow_rest = cdr(after_ch);
+                    }
+                }
+
+                if (arrow_rest && !is_nil(arrow_rest) && arrow_rest->tag == T_CELL) {
+                    Value* arrow = car(arrow_rest);
+                    if (arrow && arrow->tag == T_SYM && strcmp(arrow->s, "=>") == 0) {
+                        Value* body_rest = cdr(arrow_rest);
+                        if (!is_nil(body_rest) && body_rest->tag == T_CELL) {
+                            cases[num_cases].channel = ch;
+                            cases[num_cases].is_send = 0;
+                            cases[num_cases].recv_var = recv_var;
+                            cases[num_cases].body = car(body_rest);
+                            num_cases++;
+                        }
+                    }
+                }
+            }
+        }
+        // Parse send clause: (send ch val => body)
+        else if (first && first->tag == T_SYM && strcmp(first->s, "send") == 0) {
+            Value* after_send = cdr(clause);
+            if (!is_nil(after_send) && after_send->tag == T_CELL) {
+                Value* ch_expr = car(after_send);
+                Value* ch = eval(ch_expr, menv);
+
+                Value* after_ch = cdr(after_send);
+                if (!is_nil(after_ch) && after_ch->tag == T_CELL) {
+                    Value* val_expr = car(after_ch);
+                    Value* val = eval(val_expr, menv);
+
+                    Value* arrow_rest = cdr(after_ch);
+                    if (!is_nil(arrow_rest) && arrow_rest->tag == T_CELL) {
+                        Value* arrow = car(arrow_rest);
+                        if (arrow && arrow->tag == T_SYM && strcmp(arrow->s, "=>") == 0) {
+                            Value* body_rest = cdr(arrow_rest);
+                            if (!is_nil(body_rest) && body_rest->tag == T_CELL) {
+                                cases[num_cases].channel = ch;
+                                cases[num_cases].is_send = 1;
+                                cases[num_cases].send_val = val;
+                                cases[num_cases].body = car(body_rest);
+                                num_cases++;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        rest = cdr(rest);
+    }
+
+    // Try each case without blocking
+    for (int i = 0; i < num_cases; i++) {
+        if (!cases[i].channel || cases[i].channel->tag != T_CHANNEL) {
+            continue;
+        }
+
+        if (cases[i].is_send) {
+            if (try_channel_send(cases[i].channel, cases[i].send_val)) {
+                return eval(cases[i].body, menv);
+            }
+        } else {
+            Value* val = try_channel_recv(cases[i].channel);
+            if (val != NULL) {
+                // Bind received value to variable if specified
+                Value* body_menv = menv;
+                if (cases[i].recv_var) {
+                    Value* new_env = env_extend(menv->menv.env, cases[i].recv_var, val);
+                    body_menv = mk_menv(menv->menv.parent, new_env);
+                    body_menv->menv.h_app = menv->menv.h_app;
+                    body_menv->menv.h_let = menv->menv.h_let;
+                    body_menv->menv.h_if = menv->menv.h_if;
+                }
+                return eval(cases[i].body, body_menv);
+            }
+        }
+    }
+
+    // If no case ready and we have default, execute it
+    if (default_body != NULL) {
+        return eval(default_body, menv);
+    }
+
+    // No default, would block - return NIL for now
+    // Full implementation would park the goroutine
+    return NIL;
+}
+
+// -- Scheduler Primitives (Green Threads) --
+
+// Enqueue a process to run queue
+void scheduler_enqueue(Value* proc) {
+    if (!proc || proc->tag != T_PROCESS) return;
+    if (g_scheduler.count >= 256) return;  // Queue full
+
+    g_scheduler.queue[g_scheduler.tail] = proc;
+    g_scheduler.tail = (g_scheduler.tail + 1) % 256;
+    g_scheduler.count++;
+}
+
+// Dequeue a process from run queue
+Value* scheduler_dequeue(void) {
+    if (g_scheduler.count == 0) return NULL;
+
+    Value* proc = g_scheduler.queue[g_scheduler.head];
+    g_scheduler.head = (g_scheduler.head + 1) % 256;
+    g_scheduler.count--;
+    return proc;
+}
+
+// Park current process (for blocking channel operations)
+void scheduler_park(Value* proc) {
+    if (proc && proc->tag == T_PROCESS) {
+        proc->proc.state = PROC_PARKED;
+    }
+}
+
+// Unpark a process with a value
+void scheduler_unpark(Value* proc, Value* val) {
+    if (proc && proc->tag == T_PROCESS && proc->proc.state == PROC_PARKED) {
+        proc->proc.state = PROC_READY;
+        proc->proc.park_value = val;
+        scheduler_enqueue(proc);
+    }
+}
+
+// Spawn a new green thread
+// (go expr) -> process
+Value* prim_go(Value* args, Value* menv) {
+    Value* expr = car(args);
+
+    // Create thunk (lambda () expr)
+    Value* thunk = mk_lambda(NIL, expr, menv->menv.env);
+    Value* proc = mk_process(thunk);
+
+    scheduler_enqueue(proc);
+    return proc;
+}
+
 // -- Reader (Same as before) --
 const char* parse_ptr;
 Value* parse();
@@ -2265,6 +3038,10 @@ void init_syms() {
     SYM_SCAN = mk_sym("scan");
     SYM_GET_META = mk_sym("get-meta");
     SYM_SET_META = mk_sym("set-meta!");
+    SYM_CALL_CC = mk_sym("call/cc");
+    SYM_CHAN_CREATE = mk_sym("channel-create");
+    SYM_CHAN_SEND = mk_sym("channel-send");
+    SYM_CHAN_RECV = mk_sym("channel-recv");
 }
 
 int main(int argc, char** argv) {
@@ -2277,7 +3054,17 @@ int main(int argc, char** argv) {
     env = env_extend(env, mk_sym("-"), mk_prim(prim_sub));
     env = env_extend(env, mk_sym("cons"), mk_prim(prim_cons));
     env = env_extend(env, mk_sym("run"), mk_prim(prim_run));
-    
+
+    // Continuation & CSP Channel primitives
+    env = env_extend(env, mk_sym("call/cc"), mk_prim(prim_call_cc));
+    env = env_extend(env, mk_sym("channel-create"), mk_prim(prim_channel_create));
+    env = env_extend(env, mk_sym("channel-send"), mk_prim(prim_channel_send));
+    env = env_extend(env, mk_sym("channel-recv"), mk_prim(prim_channel_recv));
+    env = env_extend(env, mk_sym("invoke-continuation"), mk_prim(prim_invoke_cont));
+    env = env_extend(env, mk_sym("channel-close"), mk_prim(prim_channel_close));
+    env = env_extend(env, mk_sym("go"), mk_prim(prim_go));
+    env = env_extend(env, mk_sym("select"), mk_prim(prim_select));
+
     // Initial Meta-Environment (Level 0)
     Value* menv = mk_menv(NIL, env);
     
