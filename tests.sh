@@ -525,6 +525,21 @@ run_test "Phase11-ChannelZeroCap" \
     "(lift 0)" \
     "if (capacity <= 0) return NULL"
 
+# 88. Interpreter overflow protection - add overflow returns 0
+run_test "Interp-AddOverflow" \
+    "(+ 9223372036854775807 1)" \
+    "Result: 0"
+
+# 89. Interpreter overflow protection - sub underflow returns 0
+run_test "Interp-SubUnderflow" \
+    "(- -9223372036854775808 1)" \
+    "Result: 0"
+
+# 90. Interpreter overflow protection - mul overflow returns 0
+run_test "Interp-MulOverflow" \
+    "(* 9223372036854775807 2)" \
+    "Result: 0"
+
 if [ $FAIL -eq 0 ]; then
     echo "All tests passed!"
     exit 0

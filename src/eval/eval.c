@@ -794,6 +794,11 @@ Value* prim_add(Value* args, Value* menv) {
     if (!get_two_args(args, &a, &b)) return NIL;
     if (is_code(a) || is_code(b)) return emit_c_call("add", a, b);
     if (a->tag != T_INT || b->tag != T_INT) return NIL;
+    // Overflow protection: return 0 on overflow (consistent with generated code)
+    if ((b->i > 0 && a->i > LONG_MAX - b->i) ||
+        (b->i < 0 && a->i < LONG_MIN - b->i)) {
+        return mk_int(0);
+    }
     return mk_int(a->i + b->i);
 }
 
@@ -803,6 +808,11 @@ Value* prim_sub(Value* args, Value* menv) {
     if (!get_two_args(args, &a, &b)) return NIL;
     if (is_code(a) || is_code(b)) return emit_c_call("sub", a, b);
     if (a->tag != T_INT || b->tag != T_INT) return NIL;
+    // Overflow protection: return 0 on overflow (consistent with generated code)
+    if ((b->i < 0 && a->i > LONG_MAX + b->i) ||
+        (b->i > 0 && a->i < LONG_MIN + b->i)) {
+        return mk_int(0);
+    }
     return mk_int(a->i - b->i);
 }
 
@@ -828,6 +838,11 @@ Value* prim_mul(Value* args, Value* menv) {
     if (!get_two_args(args, &a, &b)) return NIL;
     if (is_code(a) || is_code(b)) return emit_c_call("mul", a, b);
     if (a->tag != T_INT || b->tag != T_INT) return NIL;
+    // Overflow protection: return 0 on overflow (consistent with generated code)
+    if (a->i > 0 && b->i > 0 && a->i > LONG_MAX / b->i) return mk_int(0);
+    if (a->i > 0 && b->i < 0 && b->i < LONG_MIN / a->i) return mk_int(0);
+    if (a->i < 0 && b->i > 0 && a->i < LONG_MIN / b->i) return mk_int(0);
+    if (a->i < 0 && b->i < 0 && a->i < LONG_MAX / b->i) return mk_int(0);
     return mk_int(a->i * b->i);
 }
 
