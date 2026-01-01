@@ -132,6 +132,7 @@ void gen_concurrent_runtime(void) {
     // Create channel
     printf("// Create message channel\n");
     printf("MsgChannel* channel_create(int capacity) {\n");
+    printf("    if (capacity <= 0) return NULL;  // Require positive capacity\n");
     printf("    MsgChannel* ch = malloc(sizeof(MsgChannel));\n");
     printf("    if (!ch) return NULL;\n");
     printf("    ch->buffer = malloc(capacity * sizeof(void*));\n");

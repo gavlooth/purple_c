@@ -520,6 +520,11 @@ run_test "Prim-MulOverflowProtect" \
     "(lift 0)" \
     "if (a->i > 0 && b->i > 0 && a->i > LONG_MAX / b->i)"
 
+# 87. Channel create rejects zero capacity (prevents division by zero)
+run_test "Phase11-ChannelZeroCap" \
+    "(lift 0)" \
+    "if (capacity <= 0) return NULL"
+
 if [ $FAIL -eq 0 ]; then
     echo "All tests passed!"
     exit 0
