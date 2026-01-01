@@ -2013,6 +2013,10 @@ Value* h_app_default(Value* exp, Value* menv) {
 
         // Construct MEnv for body: same parent/handlers as current, new env
         Value* body_menv = mk_menv(menv->menv.parent, new_env);
+        if (!body_menv) {
+            fprintf(stderr, "Error: OOM creating function menv\n");
+            return NIL;
+        }
         // Copy handlers (shallow copy of pointers)
         body_menv->menv.h_app = menv->menv.h_app;
         body_menv->menv.h_let = menv->menv.h_let;
@@ -2179,6 +2183,12 @@ Value* h_let_default(Value* exp, Value* menv) {
 
         // Create body menv
         Value* body_menv = mk_menv(menv->menv.parent, new_env);
+        if (!body_menv) {
+            ds_free(all_decls);
+            ds_free(all_frees);
+            fprintf(stderr, "Error: OOM creating let menv\n");
+            return NIL;
+        }
         body_menv->menv.h_app = menv->menv.h_app;
         body_menv->menv.h_let = menv->menv.h_let;
 
@@ -2233,6 +2243,16 @@ Value* h_let_default(Value* exp, Value* menv) {
     }
 
     Value* body_menv = mk_menv(menv->menv.parent, new_env);
+    if (!body_menv) {
+        // Free binding info list before returning on OOM
+        while (bind_list) {
+            BindingInfo* next = bind_list->next;
+            free(bind_list);
+            bind_list = next;
+        }
+        fprintf(stderr, "Error: OOM creating let menv\n");
+        return NIL;
+    }
     body_menv->menv.h_app = menv->menv.h_app;
     body_menv->menv.h_let = menv->menv.h_let;
 
@@ -2322,6 +2342,10 @@ Value* eval(Value* expr, Value* menv) {
             if (is_nil(parent)) {
                 // Lazy tower: create new meta-level on demand
                 parent = mk_menv(NIL, NIL); // Empty env for meta-level
+                if (!parent) {
+                    fprintf(stderr, "Error: OOM creating meta menv\n");
+                    return NIL;
+                }
                 menv->menv.parent = parent;
             }
             return eval(e, parent);
@@ -2560,6 +2584,11 @@ Value* prim_call_cc(Value* args, Value* menv) {
     }
 
     Value* body_menv = mk_menv(menv->menv.parent, new_env);
+    if (!body_menv) {
+        g_cont_stack_top--;  // Pop jump point on OOM
+        fprintf(stderr, "Error: OOM creating call/cc menv\n");
+        return NIL;
+    }
     body_menv->menv.h_app = menv->menv.h_app;
     body_menv->menv.h_let = menv->menv.h_let;
     body_menv->menv.h_if = menv->menv.h_if;
@@ -2917,6 +2946,10 @@ Value* prim_select(Value* args, Value* menv) {
                 if (cases[i].recv_var) {
                     Value* new_env = env_extend(menv->menv.env, cases[i].recv_var, val);
                     body_menv = mk_menv(menv->menv.parent, new_env);
+                    if (!body_menv) {
+                        fprintf(stderr, "Error: OOM creating select menv\n");
+                        return NIL;
+                    }
                     body_menv->menv.h_app = menv->menv.h_app;
                     body_menv->menv.h_let = menv->menv.h_let;
                     body_menv->menv.h_if = menv->menv.h_if;
@@ -3067,7 +3100,11 @@ int main(int argc, char** argv) {
 
     // Initial Meta-Environment (Level 0)
     Value* menv = mk_menv(NIL, env);
-    
+    if (!menv) {
+        fprintf(stderr, "Error: OOM creating initial menv\n");
+        return 1;
+    }
+
     printf("// Purple + ASAP C Compiler Output\n");
     printf("// Optimizations based on 'Practical Static Memory Management' (Corbyn 2020):\n");
     printf("// 1. Inlined Mark Bits: 'mark' field in Obj avoids external sets.\n");

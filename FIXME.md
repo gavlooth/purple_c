@@ -186,3 +186,13 @@ Items below are grouped by status.
     - Fix: Added defensive NULL check in `user_find_type` before `strcmp`
     - Fix: Added proper error cleanup paths in `eval_deftype` for OOM
     - Test: `Deftype-NullGuard` in tests.sh
+
+57) **[Eval]** Unchecked `mk_menv` return value causes NULL dereference on OOM
+    - Fix: Added NULL checks after all `mk_menv` calls in:
+      - `h_app_default` (function application)
+      - `h_let_default` (let binding - two locations)
+      - `prim_call_cc` (continuation creation)
+      - `prim_select` (select statement recv case)
+      - `eval` (EM meta-level creation)
+      - `main` (initial menv creation)
+    - Tests: `MkMenv-FunctionApp`, `MkMenv-LetBinding` in tests.sh

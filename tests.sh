@@ -546,6 +546,18 @@ run_test "Deftype-NullGuard" \
     "(deftype Point (x int) (y int))" \
     "Result:"
 
+# 92. Function application creates menv (exercises mk_menv NULL check)
+# Tests that function calls with mk_menv work correctly
+run_test "MkMenv-FunctionApp" \
+    "((lambda (x) (+ x 1)) 10)" \
+    "Result: 11"
+
+# 93. Let binding creates menv (exercises mk_menv NULL check)
+# Tests that let expressions with mk_menv work correctly
+run_test "MkMenv-LetBinding" \
+    "(let ((a 5) (b 10)) (+ a b))" \
+    "Result: 15"
+
 if [ $FAIL -eq 0 ]; then
     echo "All tests passed!"
     exit 0
