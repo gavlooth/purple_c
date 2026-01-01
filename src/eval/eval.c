@@ -1176,8 +1176,7 @@ Value* prim_chan_close(Value* args, Value* menv) {
 
 #include <setjmp.h>
 
-// Continuation escape for call/cc
-static ContEscape* current_cont_escape = NULL;
+// Continuation tag counter for call/cc
 static int cont_tag_counter = 0;
 
 // Prompt stack for delimited continuations
